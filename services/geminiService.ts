@@ -231,12 +231,12 @@ export const streamGeminiResponse = async (
 
   // 2. Search Grounding (Gemini 3 Flash)
   if (modelId === 'gemini-3-flash-preview') {
-    tools.push({ googleSearch: {} });
+    tools.push({ googleSearch: {} } as any);
   }
 
   // 3. Maps Grounding (Gemini 2.5 Flash)
   if (modelId === 'gemini-2.5-flash') {
-    tools.push({ googleMaps: {} });
+    tools.push({ googleMaps: {} } as any);
   }
 
   // 4. Image Generation Configs
