@@ -34,7 +34,7 @@ A production-grade, multi-model AI chat application built with React, TypeScript
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/20Youssef10/OmniChat.git
+    git clone https://github.com/your-org/omnichat.git
     cd omnichat
     ```
 
