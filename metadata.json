@@ -1,0 +1,8 @@
+{
+  "name": "OmniChat AI",
+  "description": "A production-grade multi-model AI chat application integrating Google Gemini and Firebase with a modern glassmorphism UI.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
