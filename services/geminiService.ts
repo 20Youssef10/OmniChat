@@ -95,7 +95,7 @@ export const generateVideo = async (
           }
       }
 
-      let operation = await ai.models.generateVideos({
+      let operation: any = await ai.models.generateVideos({
         model: modelId,
         prompt: prompt,
         image: imageInput,
@@ -233,12 +233,12 @@ export const streamGeminiResponse = async (
 
   // 2. Search Grounding (Gemini 3 Flash)
   if (modelId === 'gemini-3-flash-preview') {
-    tools.push({ googleSearch: true} });
+    tools.push({ googleSearch: {} });
   }
 
   // 3. Maps Grounding (Gemini 2.5 Flash)
   if (modelId === 'gemini-2.5-flash') {
-    tools.push({ googleMaps: true} });
+    tools.push({ googleMaps: {} });
   }
 
   // 4. Image Generation Configs
