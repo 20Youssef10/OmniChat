@@ -8,7 +8,7 @@ import {
     Check, Globe
 } from 'lucide-react';
 import { Project, Attachment, Note, Artifact } from '../../types';
-import { subscribeToProjects, updateProjectFiles } from '../../services/firebase';
+import { createProject, subscribeToProjects, updateProjectFiles, subscribeToProject } from '../../services/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { uploadFile } from '../../services/fileService';
@@ -49,6 +49,16 @@ export const OmniBook: React.FC<OmniBookProps> = ({ userId, onClose, onOpenArtif
         const unsub = subscribeToProjects(userId, setProjects);
         return () => unsub();
     }, [userId]);
+
+    // Real-time listener for active project updates (collaboration)
+    useEffect(() => {
+        if (!activeProject) return;
+        const unsub = subscribeToProject(activeProject.id, (updatedProject) => {
+            // Update state only if there are changes to avoid loop, though React handles simple object equality well
+            setActiveProject(updatedProject);
+        });
+        return () => unsub();
+    }, [activeProject?.id]);
 
     // Audio Overview Logic
     const handleGenerateAudio = async () => {
@@ -161,7 +171,8 @@ export const OmniBook: React.FC<OmniBookProps> = ({ userId, onClose, onOpenArtif
             }
             const updatedFiles = [...(activeProject.files || []), ...uploaded];
             await updateProjectFiles(activeProject.id, updatedFiles);
-            // Optimistic update
+            // Optimistic update handled by subscription now, but we can set it for instant feedback
+            // The subscription will override it shortly with server state
             setActiveProject({ ...activeProject, files: updatedFiles });
         } catch (e) {
             alert("Upload failed");
@@ -180,6 +191,7 @@ export const OmniBook: React.FC<OmniBookProps> = ({ userId, onClose, onOpenArtif
         };
         const updatedFiles = [...(activeProject.files || []), mockAttachment];
         await updateProjectFiles(activeProject.id, updatedFiles);
+        // Subscription will handle state update
         setActiveProject({ ...activeProject, files: updatedFiles });
         setYoutubeUrl('');
         setShowUrlInput(false);
@@ -219,6 +231,21 @@ export const OmniBook: React.FC<OmniBookProps> = ({ userId, onClose, onOpenArtif
         // Assuming Project type has notes array in DB update logic, simplified here
     };
 
+    const handleCreateNotebook = async () => {
+        const name = window.prompt("Enter a name for your new notebook:");
+        if (!name) return;
+        try {
+            await createProject({
+                userId,
+                name,
+                files: []
+            });
+        } catch (e) {
+            console.error("Failed to create notebook", e);
+            alert("Failed to create notebook.");
+        }
+    };
+
     if (!activeProject) {
         return (
             <div className="flex-1 bg-[#0f172a] p-8 flex flex-col items-center justify-center animate-[fadeIn_0.3s]">
@@ -239,7 +266,10 @@ export const OmniBook: React.FC<OmniBookProps> = ({ userId, onClose, onOpenArtif
                             <div className="text-xs text-slate-500">{p.files?.length || 0} sources</div>
                         </button>
                     ))}
-                    <button className="p-4 border border-dashed border-slate-700 rounded-xl text-slate-400 hover:text-white hover:border-slate-500 flex items-center justify-center gap-2">
+                    <button 
+                        onClick={handleCreateNotebook}
+                        className="p-4 border border-dashed border-slate-700 rounded-xl text-slate-400 hover:text-white hover:border-slate-500 flex items-center justify-center gap-2"
+                    >
                         <Plus size={20} /> Create New Notebook
                     </button>
                 </div>

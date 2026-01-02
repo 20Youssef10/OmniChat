@@ -446,28 +446,47 @@ export const deleteMessagesAfter = async (conversationId: string, timestamp: num
 };
 
 /**
- * Subscribes to the list of user conversations, ordered by most recently updated.
+ * Subscribes to the list of user conversations (owned OR shared), ordered by most recently updated.
  */
 export const subscribeToConversations = (userId: string, callback: (convs: Conversation[]) => void) => {
-  // Removed orderBy to avoid index requirements
-  const q = query(
-    collection(db, "conversations"), 
-    where("userId", "==", userId)
-  );
+  // Query 1: Owned Conversations
+  const q1 = query(collection(db, "conversations"), where("userId", "==", userId));
   
-  return onSnapshot(q, (snapshot) => {
-    const convs = snapshot.docs.map(doc => ({
+  // Query 2: Shared Conversations
+  const q2 = query(collection(db, "conversations"), where("sharedWith", "array-contains", userId));
+
+  let owned: Conversation[] = [];
+  let shared: Conversation[] = [];
+
+  const mergeAndUpdate = () => {
+      const map = new Map<string, Conversation>();
+      [...owned, ...shared].forEach(c => map.set(c.id, c));
+      
+      const merged = Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+      callback(merged);
+  };
+  
+  const unsub1 = onSnapshot(q1, (snapshot) => {
+    owned = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toMillis ? doc.data().createdAt.toMillis() : (doc.data().createdAt || Date.now()),
       updatedAt: doc.data().updatedAt?.toMillis ? doc.data().updatedAt.toMillis() : (doc.data().updatedAt || Date.now()),
     })) as Conversation[];
-    
-    // Client-side sort
-    convs.sort((a, b) => b.updatedAt - a.updatedAt);
-    
-    callback(convs);
+    mergeAndUpdate();
   });
+
+  const unsub2 = onSnapshot(q2, (snapshot) => {
+    shared = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toMillis ? doc.data().createdAt.toMillis() : (doc.data().createdAt || Date.now()),
+      updatedAt: doc.data().updatedAt?.toMillis ? doc.data().updatedAt.toMillis() : (doc.data().updatedAt || Date.now()),
+    })) as Conversation[];
+    mergeAndUpdate();
+  });
+
+  return () => { unsub1(); unsub2(); };
 };
 
 /**
@@ -576,24 +595,57 @@ export const deleteSavedSearch = async (searchId: string) => {
 // --- Projects ---
 
 export const subscribeToProjects = (userId: string, callback: (projects: Project[]) => void) => {
-  // Removed orderBy
-  const q = query(
-    collection(db, "projects"),
-    where("userId", "==", userId)
-  );
-  return onSnapshot(q, (snapshot) => {
-    const projects = snapshot.docs.map(doc => ({
+  // Query 1: Owned Projects
+  const q1 = query(collection(db, "projects"), where("userId", "==", userId));
+  
+  // Query 2: Shared Projects
+  const q2 = query(collection(db, "projects"), where("sharedWith", "array-contains", userId));
+
+  let owned: Project[] = [];
+  let shared: Project[] = [];
+
+  const mergeAndUpdate = () => {
+      const map = new Map<string, Project>();
+      [...owned, ...shared].forEach(p => map.set(p.id, p));
+      const merged = Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+      callback(merged);
+  };
+
+  const u1 = onSnapshot(q1, (snapshot) => {
+    owned = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toMillis ? doc.data().createdAt.toMillis() : (doc.data().createdAt || Date.now()),
       updatedAt: doc.data().updatedAt?.toMillis ? doc.data().updatedAt.toMillis() : (doc.data().updatedAt || Date.now()),
     })) as Project[];
-    
-    // Client-side sort
-    projects.sort((a, b) => b.updatedAt - a.updatedAt);
-    
-    callback(projects);
+    mergeAndUpdate();
   });
+
+  const u2 = onSnapshot(q2, (snapshot) => {
+    shared = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toMillis ? doc.data().createdAt.toMillis() : (doc.data().createdAt || Date.now()),
+      updatedAt: doc.data().updatedAt?.toMillis ? doc.data().updatedAt.toMillis() : (doc.data().updatedAt || Date.now()),
+    })) as Project[];
+    mergeAndUpdate();
+  });
+
+  return () => { u1(); u2(); };
+};
+
+export const subscribeToProject = (projectId: string, callback: (project: Project) => void) => {
+    return onSnapshot(doc(db, "projects", projectId), (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            callback({
+                id: docSnap.id,
+                ...data,
+                createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : (data.createdAt || Date.now()),
+                updatedAt: data.updatedAt?.toMillis ? data.updatedAt.toMillis() : (data.updatedAt || Date.now()),
+            } as Project);
+        }
+    });
 };
 
 export const createProject = async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {

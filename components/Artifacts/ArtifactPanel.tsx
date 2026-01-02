@@ -30,7 +30,6 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
   const [output, setOutput] = useState<string[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [pyodide, setPyodide] = useState<any>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const outputEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,17 +61,6 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
   }, [artifact, pyodide]);
 
   useEffect(() => {
-    if (artifact?.type === 'html' && activeTab === 'preview' && iframeRef.current) {
-      const doc = iframeRef.current.contentDocument;
-      if (doc) {
-        doc.open();
-        doc.write(artifact.content);
-        doc.close();
-      }
-    }
-  }, [artifact, activeTab]);
-
-  useEffect(() => {
       if (activeTab === 'run') {
           outputEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
@@ -83,8 +71,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
           const iframe = document.createElement('iframe');
           iframe.style.display = 'none';
           iframe.setAttribute('sandbox', 'allow-scripts'); // Sandbox: execution only, no DOM/Cookie access to parent
-          document.body.appendChild(iframe);
-
+          
           const handleMessage = (event: MessageEvent) => {
               // Although sandboxed frames usually have null origin, we filter by a custom flag in data
               if (event.data?.source === 'sandbox-logger') {
@@ -127,9 +114,9 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
             </script></body></html>
           `;
           
-          iframe.contentWindow?.document.open();
-          iframe.contentWindow?.document.write(html);
-          iframe.contentWindow?.document.close();
+          // Use srcdoc to inject content safely into sandboxed frame
+          iframe.srcdoc = html;
+          document.body.appendChild(iframe);
       });
   };
 
@@ -256,10 +243,10 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
             <div className="w-full h-full bg-white relative">
                  {artifact.type === 'html' && (
                      <iframe 
-                        ref={iframeRef}
                         title="Artifact Preview"
                         className="w-full h-full border-0"
                         sandbox="allow-scripts allow-modals"
+                        srcDoc={artifact.content}
                      />
                  )}
                  {artifact.type === 'svg' && (

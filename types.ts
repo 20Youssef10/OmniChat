@@ -203,6 +203,7 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   color?: string;
+  sharedWith?: string[]; // Enable collaboration
 }
 
 export interface Note {
