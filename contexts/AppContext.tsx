@@ -16,6 +16,10 @@ interface AppState {
   // UI State
   isSidebarOpen: boolean;
   setSidebarOpen: (v: boolean) => void;
+  isScratchpadOpen: boolean; // New
+  setScratchpadOpen: (v: boolean) => void; // New
+  isFocusMode: boolean; // New
+  setFocusMode: (v: boolean) => void; // New
   modals: {
       auth: boolean;
       settings: boolean;
@@ -30,7 +34,7 @@ interface AppState {
       admin: boolean;
       profile: boolean;
       info: boolean;
-      share: boolean; // Added share modal
+      share: boolean;
   };
   openModal: (modal: keyof AppState['modals']) => void;
   closeModal: (modal: keyof AppState['modals']) => void;
@@ -66,6 +70,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // UI
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isScratchpadOpen, setScratchpadOpen] = useState(false); // New
+  const [isFocusMode, setFocusMode] = useState(false); // New
   const [modals, setModals] = useState({
       auth: false,
       settings: false,
@@ -179,6 +185,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <AppContext.Provider value={{
       user, firebaseUser, authLoading, setLocalUser,
       isSidebarOpen, setSidebarOpen,
+      isScratchpadOpen, setScratchpadOpen,
+      isFocusMode, setFocusMode,
       modals, openModal, closeModal,
       selectedModelIds, setSelectedModelIds,
       isComparisonMode, toggleComparisonMode,

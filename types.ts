@@ -39,6 +39,35 @@ export interface UserSettings {
   systemPrompt?: string;
 }
 
+export interface SpotifyConfig {
+  connected: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+}
+
+export interface YouTubeConfig {
+  connected: boolean;
+  apiKey?: string;
+}
+
+export interface GitHubConfig {
+  connected: boolean;
+  token?: string; // Personal Access Token
+}
+
+export interface UnsplashConfig {
+  connected: boolean;
+  accessKey?: string;
+}
+
+export interface UserConnectors {
+  spotify?: SpotifyConfig;
+  youtube?: YouTubeConfig;
+  github?: GitHubConfig;
+  unsplash?: UnsplashConfig;
+}
+
 export interface Achievement {
   id: string;
   name: string;
@@ -72,6 +101,7 @@ export interface UserProfile {
   credits: number;
   preferences: UserPreferences;
   settings?: UserSettings;
+  connectors?: UserConnectors; // Added Connectors
   createdAt: number;
   lastLoginAt: number;
   workspaceId?: string;

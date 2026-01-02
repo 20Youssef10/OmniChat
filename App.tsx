@@ -8,11 +8,12 @@ import {
     signOut, 
     signInAnonymously
 } from 'firebase/auth';
-import { auth, googleProvider, createConversation, deleteMessagesAfter, updateMessageInDb, subscribeToSystemStatus, getConversationByShareId } from './services/firebase';
+import { auth, googleProvider, createConversation, deleteMessagesAfter, updateMessageInDb, subscribeToSystemStatus, getConversationByShareId, updateUserConnectors } from './services/firebase';
 import { SystemStatus, UserProfile } from './types';
 import { AppProvider, useAppStore } from './contexts/AppContext';
 import { useChat } from './hooks/useChat';
 import { initPerformanceMonitoring, setAnalyticsUser, trackEvent } from './services/analyticsService';
+import { exchangeSpotifyCode } from './services/connectorService';
 
 // Components
 import { Sidebar } from './components/Layout/Sidebar';
@@ -27,8 +28,9 @@ import { SearchModal } from './components/Search/SearchModal';
 import { MaintenanceScreen } from './components/Layout/MaintenanceScreen';
 import { ProfileModal } from './components/Profile/ProfileModal';
 import { AVAILABLE_MODELS } from './constants/models';
-import { Cpu, SplitSquareHorizontal, CheckCircle2, User, BrainCircuit, Activity, Zap, Users, Settings, Loader2, Shield, Search, Folder, BookTemplate, Ghost, Share2, Lock } from 'lucide-react';
+import { Cpu, SplitSquareHorizontal, CheckCircle2, User, BrainCircuit, Activity, Zap, Users, Settings, Loader2, Shield, Search, Folder, BookTemplate, Ghost, Share2, Lock, StickyNote, Download, ArrowDownCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { getTranslation } from './utils/i18n';
+import { Scratchpad } from './components/Tools/Scratchpad';
 
 // Lazy Components
 const ProjectModal = React.lazy(() => import('./components/Projects/ProjectModal').then(m => ({ default: m.ProjectModal })));
@@ -50,6 +52,8 @@ const MainLayout: React.FC = () => {
     const { 
         user, authLoading, setLocalUser,
         isSidebarOpen, setSidebarOpen,
+        isScratchpadOpen, setScratchpadOpen,
+        isFocusMode, setFocusMode,
         modals, openModal, closeModal,
         selectedModelIds, setSelectedModelIds,
         isComparisonMode, toggleComparisonMode,
@@ -70,6 +74,7 @@ const MainLayout: React.FC = () => {
     } = useChat(user, selectedModelIds, currentPersona);
 
     const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+    const [autoScroll, setAutoScroll] = useState(true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Initialize Performance Monitoring & Maintenance Check
@@ -81,10 +86,23 @@ const MainLayout: React.FC = () => {
         return () => unsub();
     }, []);
 
-    // Check for Share Link
+    // Helper to safely clear URL params
+    const clearUrlParams = () => {
+        try {
+            // Use pathname instead of '/' to support blob/sandboxed environments
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
+        } catch (e) {
+            console.warn("Failed to update history state:", e);
+        }
+    };
+
+    // Check for Share Link and OAuth Callbacks
     useEffect(() => {
-        const checkShareLink = async () => {
+        const checkUrlParams = async () => {
             const params = new URLSearchParams(window.location.search);
+            
+            // 1. Share Link
             const shareId = params.get('share');
             if (shareId) {
                 const sharedConv = await getConversationByShareId(shareId);
@@ -92,15 +110,44 @@ const MainLayout: React.FC = () => {
                     setSharedConversation(sharedConv);
                     setCurrentConversationId(sharedConv.id);
                     setSidebarOpen(false); // Focus on content
-                    // Update URL to remove ugly param if desired, or keep for refreshing
                 } else {
                     alert("Shared link invalid or expired.");
-                    window.history.replaceState({}, document.title, "/");
+                    clearUrlParams();
+                }
+                return;
+            }
+
+            // 2. Spotify OAuth Callback
+            const code = params.get('code');
+            if (code && window.location.pathname === '/callback') {
+                if (user) {
+                    try {
+                        const data = await exchangeSpotifyCode(code);
+                        if (data.access_token) {
+                            await updateUserConnectors(user.uid, {
+                                spotify: {
+                                    connected: true,
+                                    accessToken: data.access_token,
+                                    refreshToken: data.refresh_token,
+                                    expiresAt: Date.now() + (data.expires_in * 1000)
+                                }
+                            });
+                            alert("Spotify Connected Successfully!");
+                            clearUrlParams();
+                            openModal('settings');
+                        }
+                    } catch (e) {
+                        console.error("Spotify Auth Failed", e);
+                        alert("Failed to connect Spotify.");
+                    }
                 }
             }
         };
-        checkShareLink();
-    }, []);
+        
+        if (!authLoading) {
+            checkUrlParams();
+        }
+    }, [authLoading, user]); // Run when user is loaded
 
     // Update Analytics User Context
     useEffect(() => {
@@ -174,8 +221,10 @@ const MainLayout: React.FC = () => {
     }, [modals]);
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isGenerating]);
+        if (autoScroll) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages, isGenerating, autoScroll]);
 
     const handleNewChat = async (projectId?: string) => {
         if (!user && !isTemporaryChat) {
@@ -185,7 +234,7 @@ const MainLayout: React.FC = () => {
         }
         setSharedConversation(null);
         setTemporaryChat(false); // Reset temp mode when clicking new chat
-        window.history.replaceState({}, document.title, "/"); // Clear share URL
+        clearUrlParams(); // Clear share URL if present
         trackEvent('feature_used', { feature: 'new_chat', project_id: projectId });
         const id = await createConversation(user!.uid, selectedModelIds[0], "New Chat", projectId);
         setCurrentConversationId(id);
@@ -216,6 +265,18 @@ const MainLayout: React.FC = () => {
         signOut(auth);
         setLocalUser(null);
         setSharedConversation(null);
+    };
+
+    const handleExportChat = () => {
+        if (!messages.length) return;
+        const text = messages.map(m => `[${m.role.toUpperCase()} - ${new Date(m.timestamp).toLocaleString()}]\n${m.content}\n`).join('\n---\n');
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-export-${currentConversationId || 'temp'}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     const t = getTranslation(user?.preferences?.language || 'en');
@@ -271,7 +332,7 @@ const MainLayout: React.FC = () => {
                 {modals.share && <ShareModal isOpen={true} onClose={() => closeModal('share')} conversation={currentConvObj || null} />}
             </Suspense>
 
-            {!isSharedView && (
+            {!isSharedView && !isFocusMode && (
                 <Sidebar 
                     conversations={conversations}
                     currentConversationId={currentConversationId}
@@ -290,82 +351,121 @@ const MainLayout: React.FC = () => {
 
             <main className="flex-1 flex flex-col relative w-full h-full transition-all bg-background">
                 {/* Header */}
-                <header className="h-16 border-b border-slate-800/50 flex items-center justify-between px-4 bg-background/80 backdrop-blur-md z-10">
-                    <div className="flex items-center gap-4">
-                        {!isSharedView && (
-                            <button className="md:hidden p-2 text-slate-400" onClick={() => setSidebarOpen(true)}>
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                            </button>
-                        )}
-                        {isSharedView ? (
-                            <div className="flex items-center gap-2">
-                                <div className="p-1.5 bg-green-500/20 rounded text-green-400"><Share2 size={16}/></div>
-                                <span className="font-bold text-white">Shared Conversation</span>
-                                <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                                    {sharedConversation.shareConfig?.accessLevel === 'edit' ? 'Collaborative' : 'Read Only'}
-                                </span>
-                                <button onClick={handleNewChat} className="ml-4 text-xs text-indigo-400 hover:text-indigo-300">
-                                    Go Home
+                {!isFocusMode && (
+                    <header className="h-16 border-b border-slate-800/50 flex items-center justify-between px-4 bg-background/80 backdrop-blur-md z-10">
+                        <div className="flex items-center gap-4">
+                            {!isSharedView && (
+                                <button className="md:hidden p-2 text-slate-400" onClick={() => setSidebarOpen(true)}>
+                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                                 </button>
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-2">
-                                 <div className="relative group">
-                                    <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-800 rounded-full border border-slate-700 transition-colors text-sm text-slate-200">
-                                        {selectedModelIds.length > 1 ? (
-                                            <><SplitSquareHorizontal size={16} className="text-indigo-400" /><span className="font-medium">Compare ({selectedModelIds.length})</span></>
-                                        ) : (
-                                            <><span>{AVAILABLE_MODELS.find(m => m.id === selectedModelIds[0])?.icon}</span><span className="font-medium">{AVAILABLE_MODELS.find(m => m.id === selectedModelIds[0])?.name}</span></>
-                                        )}
+                            )}
+                            {isSharedView ? (
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 bg-green-500/20 rounded text-green-400"><Share2 size={16}/></div>
+                                    <span className="font-bold text-white">Shared Conversation</span>
+                                    <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                                        {sharedConversation.shareConfig?.accessLevel === 'edit' ? 'Collaborative' : 'Read Only'}
+                                    </span>
+                                    <button onClick={handleNewChat} className="ml-4 text-xs text-indigo-400 hover:text-indigo-300">
+                                        Go Home
                                     </button>
-                                    {/* Model Dropdown Simplified */}
-                                    <div className="absolute top-full left-0 mt-2 w-72 bg-surface border border-slate-700 rounded-xl shadow-xl overflow-hidden hidden group-focus-within:block z-50">
-                                        <div className="p-3 border-b border-slate-700/50 flex justify-between bg-slate-800/30">
-                                            <span className="text-xs font-semibold text-slate-400">{t.modelCompare}</span>
-                                            <button onClick={toggleComparisonMode} className={`w-10 h-5 rounded-full relative transition-colors ${isComparisonMode ? 'bg-indigo-600' : 'bg-slate-700'}`}>
-                                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${isComparisonMode ? 'left-6' : 'left-1'}`} />
-                                            </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                     <div className="relative group">
+                                        <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-800 rounded-full border border-slate-700 transition-colors text-sm text-slate-200">
+                                            {selectedModelIds.length > 1 ? (
+                                                <><SplitSquareHorizontal size={16} className="text-indigo-400" /><span className="font-medium">Compare ({selectedModelIds.length})</span></>
+                                            ) : (
+                                                <><span>{AVAILABLE_MODELS.find(m => m.id === selectedModelIds[0])?.icon}</span><span className="font-medium">{AVAILABLE_MODELS.find(m => m.id === selectedModelIds[0])?.name}</span></>
+                                            )}
+                                        </button>
+                                        {/* Model Dropdown Simplified */}
+                                        <div className="absolute top-full left-0 mt-2 w-72 bg-surface border border-slate-700 rounded-xl shadow-xl overflow-hidden hidden group-focus-within:block z-50">
+                                            <div className="p-3 border-b border-slate-700/50 flex justify-between bg-slate-800/30">
+                                                <span className="text-xs font-semibold text-slate-400">{t.modelCompare}</span>
+                                                <button onClick={toggleComparisonMode} className={`w-10 h-5 rounded-full relative transition-colors ${isComparisonMode ? 'bg-indigo-600' : 'bg-slate-700'}`}>
+                                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${isComparisonMode ? 'left-6' : 'left-1'}`} />
+                                                </button>
+                                            </div>
+                                            {AVAILABLE_MODELS.map(model => (
+                                                <button key={model.id} onClick={() => {
+                                                    if(isComparisonMode) {
+                                                        setSelectedModelIds(prev => prev.includes(model.id) ? (prev.length > 1 ? prev.filter(p=>p!==model.id) : prev) : [...prev, model.id]);
+                                                    } else {
+                                                        setSelectedModelIds([model.id]);
+                                                    }
+                                                    trackEvent('feature_used', { feature: 'model_switch', model_id: model.id });
+                                                }} className={`w-full text-left p-3 hover:bg-slate-700/50 border-b border-slate-800/50 flex gap-3 ${selectedModelIds.includes(model.id) ? 'bg-slate-700/30' : ''}`}>
+                                                    <div className="text-xl">{model.icon}</div>
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-slate-200 text-sm">{model.name} {selectedModelIds.includes(model.id) && <CheckCircle2 size={14} className="text-green-500 inline ml-1"/>}</div>
+                                                    </div>
+                                                </button>
+                                            ))}
                                         </div>
-                                        {AVAILABLE_MODELS.map(model => (
-                                            <button key={model.id} onClick={() => {
-                                                if(isComparisonMode) {
-                                                    setSelectedModelIds(prev => prev.includes(model.id) ? (prev.length > 1 ? prev.filter(p=>p!==model.id) : prev) : [...prev, model.id]);
-                                                } else {
-                                                    setSelectedModelIds([model.id]);
-                                                }
-                                                trackEvent('feature_used', { feature: 'model_switch', model_id: model.id });
-                                            }} className={`w-full text-left p-3 hover:bg-slate-700/50 border-b border-slate-800/50 flex gap-3 ${selectedModelIds.includes(model.id) ? 'bg-slate-700/30' : ''}`}>
-                                                <div className="text-xl">{model.icon}</div>
-                                                <div className="flex-1">
-                                                    <div className="font-medium text-slate-200 text-sm">{model.name} {selectedModelIds.includes(model.id) && <CheckCircle2 size={14} className="text-green-500 inline ml-1"/>}</div>
-                                                </div>
-                                            </button>
-                                        ))}
                                     </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {canShare && !isSharedView && (
-                            <button 
-                                onClick={() => openModal('share')}
+                            )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {canShare && !isSharedView && (
+                                <button 
+                                    onClick={() => openModal('share')}
+                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                                    title="Share Chat"
+                                >
+                                    <Share2 size={18} />
+                                </button>
+                            )}
+                            {messages.length > 0 && (
+                                <button
+                                    onClick={handleExportChat}
+                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                                    title="Export to Markdown"
+                                >
+                                    <Download size={18} />
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setFocusMode(true)}
                                 className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                                title="Share Chat"
+                                title="Focus Mode"
                             >
-                                <Share2 size={18} />
+                                <Maximize2 size={18} />
                             </button>
-                        )}
-                        {isTemporaryChat && (
-                            <div className="px-3 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full text-xs font-medium flex items-center gap-1">
-                                <Ghost size={12} />
-                                Temporary Chat
-                            </div>
-                        )}
-                        {user && <NotificationCenter userId={user.uid} />}
-                        {user && <div className="hidden md:block"><LevelBadge user={user} compact={true} /></div>}
+                            <button
+                                onClick={() => setScratchpadOpen(!isScratchpadOpen)}
+                                className={`p-2 rounded-lg transition-colors ${isScratchpadOpen ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                title="Scratchpad"
+                            >
+                                <StickyNote size={18} />
+                            </button>
+                            
+                            {isTemporaryChat && (
+                                <div className="px-3 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full text-xs font-medium flex items-center gap-1">
+                                    <Ghost size={12} />
+                                    Temporary Chat
+                                </div>
+                            )}
+                            {user && <NotificationCenter userId={user.uid} />}
+                            {user && <div className="hidden md:block"><LevelBadge user={user} compact={true} /></div>}
+                        </div>
+                    </header>
+                )}
+
+                {/* Focus Mode Exit Button */}
+                {isFocusMode && (
+                    <div className="absolute top-4 right-4 z-50">
+                        <button 
+                            onClick={() => setFocusMode(false)}
+                            className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-full border border-slate-600 shadow-lg backdrop-blur"
+                            title="Exit Focus Mode"
+                        >
+                            <Minimize2 size={20} />
+                        </button>
                     </div>
-                </header>
+                )}
 
                 <div className="flex flex-1 overflow-hidden relative">
                     <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 scroll-smooth">
@@ -378,7 +478,7 @@ const MainLayout: React.FC = () => {
                                 <p className="text-slate-400 max-w-md mb-8 text-sm">
                                     {isTemporaryChat 
                                         ? "Messages here are not saved to your history." 
-                                        : `OmniChat v2.2 ${currentPersona ? `• Persona: ${currentPersona.name}` : ''}`
+                                        : `OmniChat v2.3 • ${currentPersona ? `Persona: ${currentPersona.name}` : 'Ready to help.'}`
                                     }
                                 </p>
                                 {!isSharedView && (
@@ -405,6 +505,20 @@ const MainLayout: React.FC = () => {
                         <div ref={messagesEndRef} />
                     </div>
                     {currentArtifact && <ArtifactPanel artifact={currentArtifact} onClose={() => setCurrentArtifact(null)} />}
+                    <Scratchpad isOpen={isScratchpadOpen} onClose={() => setScratchpadOpen(false)} />
+                    
+                    {/* Auto-Scroll Toggle */}
+                    {messages.length > 5 && (
+                        <div className="absolute bottom-24 right-8 z-20">
+                            <button 
+                                onClick={() => setAutoScroll(!autoScroll)}
+                                className={`p-2 rounded-full shadow-lg border backdrop-blur transition-all ${autoScroll ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/80 text-slate-400 border-slate-700'}`}
+                                title={autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF"}
+                            >
+                                <ArrowDownCircle size={20} />
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="w-full bg-background/95 backdrop-blur border-t border-slate-800 z-10 pb-4 md:pb-6 pt-2">

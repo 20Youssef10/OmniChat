@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -6,7 +7,7 @@ import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Message, Artifact } from '../../types';
-import { Copy, Bot, User, Check, ExternalLink, MapPin, Edit2, RotateCw, ThumbsUp, ThumbsDown, Bookmark, Save, X, Box, Maximize2, Volume2, StopCircle } from 'lucide-react';
+import { Copy, Bot, User, Check, ExternalLink, MapPin, Edit2, RotateCw, ThumbsUp, ThumbsDown, Bookmark, Save, X, Box, Maximize2, Volume2, StopCircle, PlayCircle, Music } from 'lucide-react';
 import { updateMessageInDb } from '../../services/firebase';
 import { trackEvent } from '../../services/analyticsService';
 import mermaid from 'mermaid';
@@ -137,6 +138,86 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
     );
   };
 
+  const renderMediaEmbeds = () => {
+      // Don't extract from user messages or thinking messages
+      if (isUser || message.thinking) return null;
+
+      const content = message.content || '';
+      
+      // Regex for Media IDs
+      // Supports standard youtube, youtu.be, and spotify track links
+      const youtubeMatch = content.match(/https:\/\/(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/g);
+      const youtubeShortMatch = content.match(/https:\/\/youtu\.be\/([a-zA-Z0-9_-]+)/g);
+      const spotifyMatch = content.match(/https:\/\/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/g);
+
+      let youtubeIds: string[] = [];
+      if (youtubeMatch) youtubeIds.push(...youtubeMatch.map(url => url.split('v=')[1].split('&')[0]));
+      if (youtubeShortMatch) youtubeIds.push(...youtubeShortMatch.map(url => url.split('.be/')[1].split('?')[0]));
+      youtubeIds = Array.from(new Set(youtubeIds));
+
+      const spotifyIds = spotifyMatch ? Array.from(new Set(spotifyMatch.map(url => url.split('track/')[1].split('?')[0]))) : [];
+
+      if (youtubeIds.length === 0 && spotifyIds.length === 0) return null;
+
+      return (
+          <div className="flex flex-col gap-6 mt-4 w-full border-t border-slate-800/50 pt-4">
+              {/* YouTube Slider */}
+              {youtubeIds.length > 0 && (
+                  <div className="space-y-3">
+                      <div className="flex items-center gap-2 px-1">
+                          <PlayCircle size={16} className="text-red-500" />
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                              {youtubeIds.length > 1 ? `Videos (${youtubeIds.length})` : 'Video'}
+                          </span>
+                      </div>
+                      <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory px-1 scrollbar-thin">
+                          {youtubeIds.map(id => (
+                              <div key={id} className="flex-none w-[280px] md:w-[320px] snap-center rounded-xl overflow-hidden shadow-lg border border-slate-700 bg-black aspect-video relative group ring-1 ring-white/5 hover:ring-white/20 transition-all">
+                                  <iframe 
+                                      className="w-full h-full"
+                                      src={`https://www.youtube.com/embed/${id}`} 
+                                      title="YouTube video player" 
+                                      frameBorder="0" 
+                                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                      allowFullScreen
+                                  ></iframe>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+
+              {/* Spotify Slider */}
+              {spotifyIds.length > 0 && (
+                  <div className="space-y-3">
+                      <div className="flex items-center gap-2 px-1">
+                          <Music size={16} className="text-green-500" />
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                              {spotifyIds.length > 1 ? `Songs (${spotifyIds.length})` : 'Song'}
+                          </span>
+                      </div>
+                      <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory px-1 scrollbar-thin">
+                          {spotifyIds.map(id => (
+                              <div key={id} className="flex-none w-[280px] snap-center rounded-xl overflow-hidden shadow-lg border border-slate-700 bg-slate-900 ring-1 ring-white/5 hover:ring-white/20 transition-all">
+                                  <iframe 
+                                      style={{borderRadius: '12px'}} 
+                                      src={`https://open.spotify.com/embed/track/${id}?utm_source=generator&theme=0`} 
+                                      width="100%" 
+                                      height="152" 
+                                      frameBorder="0" 
+                                      allowFullScreen 
+                                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+                                      loading="lazy"
+                                  ></iframe>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+          </div>
+      );
+  };
+
   return (
     <div className={`flex w-full mb-6 ${isUser ? 'justify-end' : 'justify-start'} group/bubble`}>
       <div className={`flex max-w-4xl w-full ${isUser ? 'flex-row-reverse' : 'flex-row'} gap-4`}>
@@ -253,7 +334,7 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
                                     }
 
                                     return !inline && match ? (
-                                    <div className="relative group/code my-4 border border-slate-700/50 rounded-lg overflow-hidden">
+                                    <div className="relative group/code my-4 border border-slate-700/50 rounded-lg overflow-hidden font-mono text-sm">
                                         <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800/80 border-b border-slate-700/50">
                                             <span className="text-xs text-slate-400 font-mono">{lang}</span>
                                             {isArtifact && onOpenArtifact && (
@@ -276,7 +357,7 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
                                             style={oneDark}
                                             language={lang}
                                             PreTag="div"
-                                            customStyle={{ margin: 0, borderRadius: 0 }}
+                                            customStyle={{ margin: 0, borderRadius: 0, fontSize: '13px' }}
                                             {...props}
                                         >
                                             {String(children).replace(/\n$/, '')}
@@ -294,6 +375,9 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
                             </ReactMarkdown>
                         </div>
                     )}
+
+                    {/* Media Players */}
+                    {renderMediaEmbeds()}
 
                     {/* Grounding Info */}
                     {!isUser && renderGrounding()}

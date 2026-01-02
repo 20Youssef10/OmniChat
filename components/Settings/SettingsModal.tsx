@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Globe, Eye, Key, Moon, Sun, Monitor, Plus, Trash2, Copy, Share2, Download, Trophy, Database, Webhook, Github, Sliders, Cpu, Save } from 'lucide-react';
+import { X, Globe, Eye, Key, Moon, Sun, Monitor, Plus, Trash2, Copy, Share2, Download, Trophy, Database, Webhook, Github, Sliders, Cpu, Save, Link2, Music, Video, CheckCircle, ExternalLink, Image } from 'lucide-react';
 import { UserProfile, ApiKey, UserApiKeys, GenerationConfig } from '../../types';
 import { translations, getTranslation, Language } from '../../utils/i18n';
-import { generateApiKey, subscribeToApiKeys, deleteApiKey, updateUserPreferences, updateIntegrationConfig, exportUserData } from '../../services/firebase';
+import { generateApiKey, subscribeToApiKeys, deleteApiKey, updateUserPreferences, updateIntegrationConfig, exportUserData, updateUserConnectors } from '../../services/firebase';
 import { ACHIEVEMENTS, LEVELS } from '../../utils/gamification';
+import { getSpotifyAuthUrl, DEFAULT_YOUTUBE_API_KEY } from '../../services/connectorService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, user }) => {
-  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'api_keys' | 'integrations' | 'export'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'api_keys' | 'integrations' | 'connectors' | 'export'>('general');
   const [appApiKeys, setAppApiKeys] = useState<ApiKey[]>([]); // Internal App Keys
   const [newKeyName, setNewKeyName] = useState('');
   const [isExporting, setIsExporting] = useState(false);
@@ -33,6 +34,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, u
   const [slackWebhook, setSlackWebhook] = useState(user.integrations?.slackWebhook || '');
   const [githubToken, setGithubToken] = useState(user.integrations?.githubToken || '');
   
+  // Connectors State
+  const [youtubeKey, setYoutubeKey] = useState(user.connectors?.youtube?.apiKey || DEFAULT_YOUTUBE_API_KEY);
+  const [githubPat, setGithubPat] = useState(user.connectors?.github?.token || '');
+  const [unsplashAccessKey, setUnsplashAccessKey] = useState(user.connectors?.unsplash?.accessKey || '');
+
   // Local state for immediate UI feedback
   const [lang, setLang] = useState<Language>(user.preferences.language);
   const t = getTranslation(lang);
@@ -101,6 +107,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, u
       }
   };
 
+  const handleConnectSpotify = () => {
+      window.location.href = getSpotifyAuthUrl();
+  };
+
+  const handleDisconnectSpotify = async () => {
+      if(confirm('Disconnect Spotify?')) {
+          await updateUserConnectors(user.uid, { spotify: { connected: false } });
+      }
+  };
+
+  const handleSaveYouTube = async () => {
+      await updateUserConnectors(user.uid, { youtube: { connected: true, apiKey: youtubeKey } });
+      alert('YouTube settings saved!');
+  };
+
+  const handleSaveGithubConnector = async () => {
+      await updateUserConnectors(user.uid, { github: { connected: !!githubPat, token: githubPat } });
+      alert('GitHub connector updated!');
+  };
+
+  const handleSaveUnsplash = async () => {
+      await updateUserConnectors(user.uid, { unsplash: { connected: !!unsplashAccessKey, accessKey: unsplashAccessKey } });
+      alert('Unsplash settings saved!');
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -129,6 +160,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, u
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'models' ? 'bg-indigo-600/20 text-indigo-300' : 'text-slate-400 hover:bg-slate-800'}`}
                 >
                     <Cpu size={16} /> Model Config
+                </button>
+                <button 
+                    onClick={() => setActiveTab('connectors')}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'connectors' ? 'bg-indigo-600/20 text-indigo-300' : 'text-slate-400 hover:bg-slate-800'}`}
+                >
+                    <Link2 size={16} /> Connectors
                 </button>
                 <button 
                     onClick={() => setActiveTab('api_keys')}
@@ -256,6 +293,166 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, u
                         <button onClick={handleSaveModelConfig} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium">
                             <Save size={16} /> Save Configuration
                         </button>
+                    </div>
+                )}
+
+                {activeTab === 'connectors' && (
+                    <div className="space-y-6">
+                        <div className="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-xl text-sm text-indigo-200 mb-4 flex gap-2">
+                            <Link2 size={18} />
+                            <div>Link your accounts to allow the AI to access media and context from external platforms.</div>
+                        </div>
+
+                        {/* Spotify */}
+                        <div className="p-5 bg-slate-800/30 rounded-xl border border-slate-700">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-[#1DB954] flex items-center justify-center text-black">
+                                        <Music size={20} fill="currentColor" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white">Spotify</h3>
+                                        <p className="text-xs text-slate-400">Search tracks and access your top music.</p>
+                                    </div>
+                                </div>
+                                {user.connectors?.spotify?.connected ? (
+                                    <span className="flex items-center gap-1 text-green-400 text-xs font-bold bg-green-900/20 px-2 py-1 rounded">
+                                        <CheckCircle size={12} /> Connected
+                                    </span>
+                                ) : (
+                                    <button 
+                                        onClick={handleConnectSpotify}
+                                        className="bg-[#1DB954] hover:bg-[#1ed760] text-black font-bold py-1.5 px-4 rounded-full text-xs transition-colors"
+                                    >
+                                        Connect
+                                    </button>
+                                )}
+                            </div>
+                            {user.connectors?.spotify?.connected && (
+                                <div className="text-xs text-slate-500 flex justify-between items-center">
+                                    <span>Access enabled for AI context.</span>
+                                    <button onClick={handleDisconnectSpotify} className="text-red-400 hover:underline">Disconnect</button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* YouTube */}
+                        <div className="p-5 bg-slate-800/30 rounded-xl border border-slate-700">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-[#FF0000] flex items-center justify-center text-white">
+                                        <Video size={20} fill="currentColor" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white">YouTube</h3>
+                                        <p className="text-xs text-slate-400">Enable video search and context.</p>
+                                    </div>
+                                </div>
+                                {user.connectors?.youtube?.connected ? (
+                                    <span className="flex items-center gap-1 text-green-400 text-xs font-bold bg-green-900/20 px-2 py-1 rounded">
+                                        <CheckCircle size={12} /> Enabled
+                                    </span>
+                                ) : null}
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">YouTube API Key</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="password" 
+                                        value={youtubeKey}
+                                        onChange={(e) => setYoutubeKey(e.target.value)}
+                                        placeholder="API Key"
+                                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white font-mono"
+                                    />
+                                    <button onClick={handleSaveYouTube} className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-xs">
+                                        Save
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-500">
+                                    Default system key is pre-filled. You can override it with your own Google Cloud API Key enabled for YouTube Data API v3.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* GitHub */}
+                        <div className="p-5 bg-slate-800/30 rounded-xl border border-slate-700">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-white">
+                                        <Github size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white">GitHub</h3>
+                                        <p className="text-xs text-slate-400">Search repositories and issues.</p>
+                                    </div>
+                                </div>
+                                {user.connectors?.github?.connected ? (
+                                    <span className="flex items-center gap-1 text-green-400 text-xs font-bold bg-green-900/20 px-2 py-1 rounded">
+                                        <CheckCircle size={12} /> Enabled
+                                    </span>
+                                ) : null}
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Personal Access Token</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="password" 
+                                        value={githubPat}
+                                        onChange={(e) => setGithubPat(e.target.value)}
+                                        placeholder="ghp_..."
+                                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white font-mono"
+                                    />
+                                    <button onClick={handleSaveGithubConnector} className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-xs">
+                                        Save
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-500">
+                                    Enter a classic PAT with `repo` scope to enable searching private repositories. Public search works without token (rate limited).
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Unsplash */}
+                        <div className="p-5 bg-slate-800/30 rounded-xl border border-slate-700">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black">
+                                        <Image size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white">Unsplash</h3>
+                                        <p className="text-xs text-slate-400">Search high-quality stock photos.</p>
+                                    </div>
+                                </div>
+                                {user.connectors?.unsplash?.connected ? (
+                                    <span className="flex items-center gap-1 text-green-400 text-xs font-bold bg-green-900/20 px-2 py-1 rounded">
+                                        <CheckCircle size={12} /> Enabled
+                                    </span>
+                                ) : null}
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Access Key</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="password" 
+                                        value={unsplashAccessKey}
+                                        onChange={(e) => setUnsplashAccessKey(e.target.value)}
+                                        placeholder="Unsplash Access Key"
+                                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white font-mono"
+                                    />
+                                    <button onClick={handleSaveUnsplash} className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-xs">
+                                        Save
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-500">
+                                    Required for photo search. Get a free key from the Unsplash Developer API.
+                                </p>
+                            </div>
+                        </div>
+
                     </div>
                 )}
 

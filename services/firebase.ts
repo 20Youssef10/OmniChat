@@ -29,7 +29,7 @@ import {
 import { getStorage } from "firebase/storage";
 import { getAnalytics } from "firebase/analytics";
 import { getMessaging } from "firebase/messaging";
-import { Message, Conversation, UserProfile, Project, PromptTemplate, Persona, Memory, Workspace, Workflow, ApiKey, Notification, SystemConfig, AdminLog, GlobalConfig, SystemStatus, UserRole, Attachment } from "../types";
+import { Message, Conversation, UserProfile, Project, PromptTemplate, Persona, Memory, Workspace, Workflow, ApiKey, Notification, SystemConfig, AdminLog, GlobalConfig, SystemStatus, UserRole, Attachment, UserConnectors } from "../types";
 import { updateStreak, LEVELS } from "../utils/gamification";
 
 const firebaseConfig = {
@@ -228,6 +228,18 @@ export const updateUserPreferences = async (userId: string, preferences: Partial
   });
 };
 
+export const updateUserConnectors = async (userId: string, connectors: Partial<UserConnectors>) => {
+    const userRef = doc(db, "users", userId);
+    // Use dot notation to avoid overwriting entire map
+    const updates: any = {};
+    if (connectors.spotify) updates["connectors.spotify"] = connectors.spotify;
+    if (connectors.youtube) updates["connectors.youtube"] = connectors.youtube;
+    if (connectors.github) updates["connectors.github"] = connectors.github;
+    if (connectors.unsplash) updates["connectors.unsplash"] = connectors.unsplash;
+    
+    await updateDoc(userRef, updates);
+};
+
 /**
  * Updates user gamification stats using dot notation to prevent overwriting nested objects.
  */
@@ -392,13 +404,22 @@ export const createConversation = async (userId: string, modelId: string, initia
   return docRef.id;
 };
 
-export const sendMessageToDb = async (conversationId: string, message: Omit<Message, 'id'>) => {
-  const messagesRef = collection(db, "conversations", conversationId, "messages");
-  await addDoc(messagesRef, {
+export const sendMessageToDb = async (conversationId: string, message: Message | Omit<Message, 'id'>) => {
+  const messagesCol = collection(db, "conversations", conversationId, "messages");
+  
+  const msgData = {
     ...message,
     conversationId,
     timestamp: serverTimestamp()
-  });
+  };
+
+  if ('id' in message && message.id) {
+      // Use explicit ID to ensure consistency between client state and DB
+      await setDoc(doc(messagesCol, message.id), msgData);
+  } else {
+      // Allow auto-generated ID if none provided
+      await addDoc(messagesCol, msgData);
+  }
   
   const convRef = doc(db, "conversations", conversationId);
   await updateDoc(convRef, {
@@ -461,8 +482,8 @@ export const subscribeToMessages = (conversationId: string, callback: (msgs: Mes
 
   return onSnapshot(q, (snapshot) => {
     const msgs = snapshot.docs.map(doc => ({
-      id: doc.id,
       ...doc.data(),
+      id: doc.id, // IMPORTANT: Overwrite data.id with doc.id to ensure we always have the real Firestore key
       timestamp: doc.data().timestamp?.toMillis ? doc.data().timestamp.toMillis() : (doc.data().timestamp || Date.now())
     })) as Message[];
     callback(msgs);

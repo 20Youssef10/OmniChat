@@ -16,6 +16,11 @@ import {
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { streamResponse, generateVideo, generateImage } from '../services/apiService';
 import { generateConversationTitle } from '../services/geminiService';
+import { 
+    searchYouTube, searchSpotify, searchGithub, searchUnsplash, 
+    searchHackerNews, getWeather, searchWikipedia, getCryptoPrice,
+    DEFAULT_YOUTUBE_API_KEY 
+} from '../services/connectorService';
 import { LEVELS } from '../utils/gamification';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AVAILABLE_MODELS } from '../constants/models';
@@ -159,6 +164,166 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
                 else if (cmd === '/page' || cmd === '/quiz' || cmd === '/visualize') { processedText = `[Task: ${cmd.replace('/', '')}] ${content}`; }
                 else if (cmd === '/summarize') { processedText = "Please summarize the conversation so far."; }
                 else if (cmd === '/rewrite') { processedText = `Rewrite the following text professionally: ${content}`; }
+                else if (cmd === '/eli5') { processedText = `Explain the following topic like I'm 5 years old: ${content}`; }
+                else if (cmd === '/fix') { processedText = `Please fix grammar and spelling in the following text, and briefly list the changes: ${content}`; }
+                else if (cmd === '/review') { processedText = `Please review this code for bugs, performance issues, and best practices: ${content}`; }
+                else if (cmd === '/short') { processedText = `TL;DR. Please provide a very concise summary of: ${content}`; }
+            } else {
+                // --- Connectors Integration ---
+                const lowerText = payload.text.toLowerCase();
+                const stopWords = ['search', 'the', 'youtube', 'for', 'find', 'me', 'watch', 'video', 'videos', 'on', 'about', 'play', 'spotify', 'song', 'track', 'music', 'listen', 'to', 'channel', 'playlist', 'album', 'artist', 'github', 'repo', 'repository', 'code', 'issue', 'pr', 'unsplash', 'stock', 'photo', 'picture', 'image', 'news', 'weather', 'wiki', 'wikipedia', 'price', 'cost', 'crypto'];
+                const query = payload.text.split(' ').filter(w => !stopWords.includes(w.toLowerCase())).join(' ');
+
+                // 1. YouTube Connector
+                const isYouTubeEnabled = user?.connectors?.youtube?.connected || (!user?.connectors?.youtube && !!DEFAULT_YOUTUBE_API_KEY);
+                if (isYouTubeEnabled && (lowerText.includes('youtube') || lowerText.includes('video') || lowerText.includes('watch') || lowerText.includes('channel'))) {
+                    try {
+                        if (query.trim().length > 1) {
+                            const apiKey = user?.connectors?.youtube?.apiKey || DEFAULT_YOUTUBE_API_KEY;
+                            const ytResults = await searchYouTube(query, apiKey);
+                            if (ytResults.items?.length > 0) {
+                                const context = ytResults.items.map((item: any) => {
+                                    const kind = item.id.kind?.split('#')[1] || 'video';
+                                    const title = item.snippet.title;
+                                    const channel = item.snippet.channelTitle;
+                                    let link = '';
+                                    if (kind === 'video') link = `https://www.youtube.com/watch?v=${item.id.videoId}`;
+                                    else if (kind === 'channel') link = `https://www.youtube.com/channel/${item.id.channelId}`;
+                                    else if (kind === 'playlist') link = `https://www.youtube.com/playlist?list=${item.id.playlistId}`;
+                                    
+                                    return `- [${kind.toUpperCase()}] ${title} by ${channel} (${link})`;
+                                }).join('\n');
+                                processedText += `\n\n[System (YouTube Connector)]: I found the following YouTube results. Please present them to the user:\n${context}`;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('YouTube Connector failed', e);
+                    }
+                }
+
+                // 2. Spotify Connector
+                const isSpotifyEnabled = user?.connectors?.spotify?.connected && user?.connectors?.spotify?.accessToken;
+                if (isSpotifyEnabled && (lowerText.includes('spotify') || lowerText.includes('song') || lowerText.includes('music') || lowerText.includes('play') || lowerText.includes('artist') || lowerText.includes('album'))) {
+                    try {
+                        if (query.trim().length > 1) {
+                            const spotifyResults = await searchSpotify(query, user.connectors!.spotify!.accessToken!);
+                            let context = "";
+                            
+                            // Tracks
+                            if (spotifyResults.tracks?.items?.length > 0) {
+                                context += "Tracks:\n" + spotifyResults.tracks.items.map((item: any) => 
+                                    `- ${item.name} by ${item.artists[0].name} (Link: ${item.external_urls.spotify})`
+                                ).join('\n') + "\n";
+                            }
+                            // Artists
+                            if (spotifyResults.artists?.items?.length > 0) {
+                                context += "Artists:\n" + spotifyResults.artists.items.map((item: any) => 
+                                    `- ${item.name} (Link: ${item.external_urls.spotify})`
+                                ).join('\n') + "\n";
+                            }
+                            // Playlists
+                            if (spotifyResults.playlists?.items?.length > 0) {
+                                context += "Playlists:\n" + spotifyResults.playlists.items.map((item: any) => 
+                                    `- ${item.name} by ${item.owner.display_name} (Link: ${item.external_urls.spotify})`
+                                ).join('\n') + "\n";
+                            }
+
+                            if (context) {
+                                processedText += `\n\n[System (Spotify Connector)]: I found the following Spotify results. Please present them to the user:\n${context}`;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Spotify Connector failed', e);
+                    }
+                }
+
+                // 3. GitHub Connector
+                const isGithubEnabled = user?.connectors?.github?.connected;
+                if (isGithubEnabled && (lowerText.includes('github') || lowerText.includes('repo') || lowerText.includes('repository') || lowerText.includes('issue') || lowerText.includes('pr'))) {
+                    try {
+                        if (query.trim().length > 1) {
+                            const results = await searchGithub(query, user.connectors?.github?.token);
+                            if (results.items?.length > 0) {
+                                const context = results.items.map((item: any) => 
+                                    `- [${item.html_url ? 'Repo/Issue' : 'Item'}] ${item.full_name || item.title} (${item.html_url}) - ${item.description ? item.description.substring(0, 100) : ''}...`
+                                ).join('\n');
+                                processedText += `\n\n[System (GitHub Connector)]: I found the following GitHub results. Please summarize or present them:\n${context}`;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('GitHub Connector failed', e);
+                    }
+                }
+
+                // 4. Unsplash Connector
+                const isUnsplashEnabled = user?.connectors?.unsplash?.connected && user?.connectors?.unsplash?.accessKey;
+                if (isUnsplashEnabled && (lowerText.includes('unsplash') || lowerText.includes('stock photo') || lowerText.includes('wallpaper') || lowerText.includes('picture of'))) {
+                    try {
+                        if (query.trim().length > 1) {
+                            const results = await searchUnsplash(query, user.connectors!.unsplash!.accessKey!);
+                            if (results.results?.length > 0) {
+                                const context = results.results.map((item: any) => 
+                                    `![${item.alt_description || 'Image'}](${item.urls.regular})\n` +
+                                    `*Photo by [${item.user.name}](${item.user.links.html}) on Unsplash*`
+                                ).join('\n\n');
+                                processedText += `\n\n[System (Unsplash Connector)]: I found the following stock photos. Display them to the user with credits:\n${context}`;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Unsplash Connector failed', e);
+                    }
+                }
+
+                // 5. Hacker News Connector
+                if (lowerText.includes('hacker news') || lowerText.includes('tech news')) {
+                    const results = await searchHackerNews(lowerText.includes('new') ? 'new' : 'top');
+                    if (results.length > 0) {
+                        const context = results.map((item: any) => 
+                            `- ${item.title} (Score: ${item.score}, By: ${item.by}) - ${item.url}`
+                        ).join('\n');
+                        processedText += `\n\n[System (Hacker News Connector)]: Top tech stories:\n${context}`;
+                    }
+                }
+
+                // 6. Weather Connector
+                if (lowerText.includes('weather')) {
+                    // Extract city name (rough heuristic)
+                    const cityMatch = payload.text.match(/weather (?:in|for|at)?\s*([a-zA-Z\s]+)/i);
+                    const city = cityMatch ? cityMatch[1] : null;
+                    if (city) {
+                        const data = await getWeather(city);
+                        if (data) {
+                            processedText += `\n\n[System (Weather Connector)]: Weather for ${data.location.name}, ${data.location.country}:\n` +
+                                `Current: ${data.current.temperature_2m}°C, Wind: ${data.current.wind_speed_10m}km/h\n` +
+                                `Forecast Max: ${data.daily.temperature_2m_max[0]}°C, Min: ${data.daily.temperature_2m_min[0]}°C`;
+                        }
+                    }
+                }
+
+                // 7. Wikipedia Connector
+                if (lowerText.includes('wiki') || lowerText.startsWith('what is') || lowerText.startsWith('who is')) {
+                    const topic = query.replace('wiki', '').trim();
+                    if (topic.length > 2) {
+                        const results = await searchWikipedia(topic);
+                        if (results.length > 0) {
+                            processedText += `\n\n[System (Wikipedia Connector)]: I found this info on Wikipedia:\n` +
+                                results.map((r: any) => `- **${r.title}**: ${r.snippet} ([Link](${r.url}))`).join('\n');
+                        }
+                    }
+                }
+
+                // 8. Crypto Price Connector
+                if (lowerText.includes('price of') || lowerText.includes('crypto')) {
+                    const coinMatch = payload.text.match(/price of\s*([a-zA-Z]+)/i);
+                    const coin = coinMatch ? coinMatch[1] : null;
+                    if (coin) {
+                        const data = await getCryptoPrice(coin);
+                        if (data) {
+                            processedText += `\n\n[System (CoinGecko Connector)]: Price of ${coin.toUpperCase()}:\n` +
+                                `USD: $${data.usd}, EUR: €${data.eur} (24h Change: ${data.usd_24h_change.toFixed(2)}%)`;
+                        }
+                    }
+                }
             }
             
             let convId = currentConversationId;
@@ -173,7 +338,7 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
             const userMsg: Message = {
                 id: `msg-${Date.now()}`,
                 role: 'user',
-                content: processedText,
+                content: processedText, // Contains the original prompt + any injected context
                 timestamp: Date.now(),
                 attachments: payload.attachments,
                 conversationId: convId || undefined,
@@ -297,7 +462,8 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
         if (isTemp) {
             setTempMessages(prev => prev.map(m => m.id === msgId ? { ...m, ...updates } : m));
         } else {
-             await sendMessageToDb(convId, { ...updates, role: 'model', model: modelId, timestamp: Date.now() } as any);
+             // We now use updateMessageInDb with the known ID (msgId) to prevent creating new documents
+             await updateMessageInDb(convId, msgId, { ...updates, role: 'model', model: modelId } as any);
         }
     };
 

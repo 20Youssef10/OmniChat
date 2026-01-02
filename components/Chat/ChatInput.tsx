@@ -1,8 +1,17 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, X, Image as ImageIcon, Loader2, Mic, MicOff, Command } from 'lucide-react';
+import { Send, Paperclip, X, Image as ImageIcon, Loader2, Mic, MicOff, Command, Wand2, Hash, Type } from 'lucide-react';
 import { Attachment } from '../../types';
 import { uploadFile, readFileAsBase64 } from '../../services/fileService';
+import Editor from 'react-simple-code-editor';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-json';
+import { GoogleGenAI } from '@google/genai';
 
 interface ChatInputProps {
   onSend: (text: string, attachments: Attachment[]) => void;
@@ -21,6 +30,17 @@ const SLASH_COMMANDS = [
     { cmd: '/analyze', desc: 'Analyze the attached file', icon: '📈' },
     { cmd: '/summarize', desc: 'Summarize the conversation', icon: '📝' },
     { cmd: '/rewrite', desc: 'Rewrite text professionally', icon: '✒️' },
+    { cmd: '/eli5', desc: 'Explain Like I\'m 5', icon: '👶' },
+    { cmd: '/fix', desc: 'Fix Grammar & Spelling', icon: '✨' },
+    { cmd: '/review', desc: 'Code Review', icon: '🧐' },
+    { cmd: '/short', desc: 'TL;DR Summary', icon: '📉' },
+];
+
+const TONES = [
+    { id: 'casual', label: 'Casual', emoji: '😎' },
+    { id: 'professional', label: 'Professional', emoji: '💼' },
+    { id: 'academic', label: 'Academic', emoji: '🎓' },
+    { id: 'creative', label: 'Creative', emoji: '🎨' },
 ];
 
 export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }) => {
@@ -29,8 +49,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
   const [isUploading, setIsUploading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedTone, setSelectedTone] = useState<string | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -96,20 +117,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
     }
   };
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
-  }, [text]);
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
-    // Simple navigation for suggestions could be added here
+    // Suggestion navigation logic could go here
   };
 
   const handleSend = () => {
@@ -121,8 +134,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
         setIsListening(false);
     }
 
-    // Append extracted text from files to the prompt context if present
+    // Append tone if selected
     let finalPrompt = text;
+    if (selectedTone) {
+        finalPrompt += `\n\n(Please respond in a ${selectedTone} tone)`;
+    }
+
+    // Append extracted text from files to the prompt context if present
     const contextFiles = attachments.filter(a => a.extractedText);
     if (contextFiles.length > 0) {
         finalPrompt += "\n\n--- Attached File Context ---\n";
@@ -134,7 +152,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
     onSend(finalPrompt, attachments);
     setText('');
     setAttachments([]);
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    setSelectedTone(null);
+  };
+
+  const handleOptimizePrompt = async () => {
+      if (!text.trim()) return;
+      setIsOptimizing(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: `Rewrite the following user prompt to be more clear, detailed, and effective for an AI model. Keep the intent exactly the same, just improve the phrasing. Return ONLY the rewritten prompt.
+              
+              Original: ${text}`
+          });
+          if (response.text) {
+              setText(response.text.trim());
+          }
+      } catch (e) {
+          console.error("Optimization failed", e);
+      } finally {
+          setIsOptimizing(false);
+      }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,10 +217,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
   };
 
   const insertCommand = (cmd: string) => {
-      // Replace the current text (which starts with /) with the command tag or just use it as a trigger
-      // Here we just set the text, but logic in useChat will detect it.
       setText(cmd + ' ');
-      if (textareaRef.current) textareaRef.current.focus();
       setShowSuggestions(false);
   };
 
@@ -256,16 +292,57 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
             accept="image/*,.pdf,.txt,.csv,.xlsx,.xls,.md"
         />
 
-        <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isUploading ? "Uploading files..." : isListening ? "Listening..." : disabled ? "Conversation is read-only" : "Ask anything... (type / for commands)"}
-            className={`flex-1 bg-transparent border-none text-slate-200 placeholder-slate-500 focus:ring-0 resize-none py-2 max-h-[200px] overflow-y-auto leading-relaxed ${isListening ? 'animate-pulse' : ''} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-            rows={1}
-            disabled={disabled || isUploading}
-        />
+        <div className="flex-1 relative min-h-[44px] max-h-[200px] overflow-y-auto">
+            {/* Placeholder Overlay */}
+            {!text && !isUploading && !isListening && (
+                <div className="absolute top-2.5 left-1 text-slate-500 pointer-events-none text-base truncate w-full pr-8">
+                    {disabled ? "Conversation is read-only" : "Ask anything... (type / for commands)"}
+                </div>
+            )}
+            
+            {/* Highlighted Editor */}
+            <Editor
+                value={text}
+                onValueChange={setText}
+                highlight={code => Prism.highlight(code, Prism.languages.markdown, 'markdown')}
+                padding={10}
+                placeholder={isUploading ? "Uploading files..." : isListening ? "Listening..." : ""}
+                onKeyDown={handleKeyDown}
+                className="font-mono text-base bg-transparent min-h-[44px]"
+                textareaClassName="focus:outline-none bg-transparent text-slate-200 placeholder-transparent w-full h-full"
+                style={{
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: 15,
+                    lineHeight: 1.5,
+                    color: '#e2e8f0', // slate-200
+                }}
+                disabled={disabled || isUploading}
+            />
+        </div>
+
+        {/* Tone Selector */}
+        <div className="hidden md:flex gap-1 mr-1">
+            {TONES.map(t => (
+                <button
+                    key={t.id}
+                    onClick={() => setSelectedTone(selectedTone === t.id ? null : t.id)}
+                    className={`p-1.5 rounded-lg text-xs transition-colors ${selectedTone === t.id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
+                    title={t.label}
+                >
+                    {t.emoji}
+                </button>
+            ))}
+        </div>
+
+        {/* Prompt Optimizer */}
+        <button
+            onClick={handleOptimizePrompt}
+            disabled={!text.trim() || isOptimizing}
+            className={`p-2 rounded-lg transition-colors ${isOptimizing ? 'text-yellow-400 animate-pulse' : 'text-slate-400 hover:text-yellow-400 hover:bg-slate-800'}`}
+            title="Optimize Prompt"
+        >
+            <Wand2 size={18} />
+        </button>
 
         <button 
             onClick={toggleListening}
@@ -289,8 +366,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, userId }
             <Send size={18} />
         </button>
       </div>
-      <div className="text-center mt-2 text-xs text-slate-500">
-        AI may display inaccurate info. Uploads limited to 10MB.
+      <div className="flex justify-between items-center mt-2 px-2 text-xs text-slate-500">
+        <span>AI may display inaccurate info. Uploads limited to 10MB.</span>
+        <div className="flex gap-3">
+            <span className="flex items-center gap-1"><Type size={10}/> {text.length} chars</span>
+            <span className="flex items-center gap-1"><Hash size={10}/> ~{Math.ceil(text.length / 4)} tokens</span>
+        </div>
       </div>
     </div>
   );

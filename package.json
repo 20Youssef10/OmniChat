@@ -22,7 +22,9 @@
     "recharts": "2.12.7",
     "react-dom": "^18.2.0",
     "react": "^18.2.0",
-    "@tanstack/react-query": "5.0.0"
+    "@tanstack/react-query": "5.0.0",
+    "prismjs": "^1.30.0",
+    "react-simple-code-editor": "0.14.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
