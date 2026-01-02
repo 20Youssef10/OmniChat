@@ -27,7 +27,7 @@ import {
   limit
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, Analytics } from "firebase/analytics";
 import { getMessaging } from "firebase/messaging";
 import { Message, Conversation, UserProfile, Project, PromptTemplate, Persona, Memory, Workspace, Workflow, ApiKey, Notification, SystemConfig, AdminLog, GlobalConfig, SystemStatus, UserRole, Attachment, UserConnectors } from "../types";
 import { updateStreak, LEVELS } from "../utils/gamification";
@@ -66,7 +66,7 @@ if (typeof window !== 'undefined') {
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
-let analytics;
+let analytics: Analytics | undefined;
 let messaging;
 
 if (typeof window !== 'undefined') {
@@ -257,10 +257,10 @@ export const updateUserGamification = async (userId: string, updates: Partial<Us
 export const updateIntegrationConfig = async (userId: string, config: Partial<UserProfile['integrations']>) => {
     const userRef = doc(db, "users", userId);
     const flattened: any = {};
-    if (config.slackWebhook !== undefined) flattened["integrations.slackWebhook"] = config.slackWebhook;
-    if (config.discordWebhook !== undefined) flattened["integrations.discordWebhook"] = config.discordWebhook;
-    if (config.githubToken !== undefined) flattened["integrations.githubToken"] = config.githubToken;
-    if (config.notionApiKey !== undefined) flattened["integrations.notionApiKey"] = config.notionApiKey;
+    if (config?.slackWebhook !== undefined) flattened["integrations.slackWebhook"] = config.slackWebhook;
+    if (config?.discordWebhook !== undefined) flattened["integrations.discordWebhook"] = config.discordWebhook;
+    if (config?.githubToken !== undefined) flattened["integrations.githubToken"] = config.githubToken;
+    if (config?.notionApiKey !== undefined) flattened["integrations.notionApiKey"] = config.notionApiKey;
     
     await updateDoc(userRef, flattened);
 };
@@ -373,7 +373,7 @@ export const getAdminStats = async () => {
 export const getAllUsers = async () => {
     const q = query(collection(db, "users"), limit(50));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as UserProfile));
 };
 
 export const getAdminAuditLogs = async () => {

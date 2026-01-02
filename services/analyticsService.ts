@@ -1,3 +1,4 @@
+
 import { analytics } from "./firebase";
 import { logEvent, setUserId, setUserProperties } from "firebase/analytics";
 import { logger } from "../utils/logger";
@@ -41,7 +42,7 @@ export const trackEvent = (eventName: AnalyticsEvent, params?: EventParams) => {
     return;
   }
   try {
-    logEvent(analytics, eventName, params);
+    logEvent(analytics, eventName as string, params);
   } catch (error) {
     logger.warn("Failed to log analytics event", error);
   }

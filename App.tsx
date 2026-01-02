@@ -366,7 +366,7 @@ const MainLayout: React.FC = () => {
                                     <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
                                         {sharedConversation.shareConfig?.accessLevel === 'edit' ? 'Collaborative' : 'Read Only'}
                                     </span>
-                                    <button onClick={handleNewChat} className="ml-4 text-xs text-indigo-400 hover:text-indigo-300">
+                                    <button onClick={() => handleNewChat()} className="ml-4 text-xs text-indigo-400 hover:text-indigo-300">
                                         Go Home
                                     </button>
                                 </div>

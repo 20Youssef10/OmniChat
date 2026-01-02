@@ -26,16 +26,14 @@ export const generateConversationTitle = async (userMessage: string, aiResponse:
     try {
         const ai = await getClient();
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Create a short, relevant conversation title (max 6 words) based on the following exchange. Do not use quotes.
+            model: 'gemini-3-flash-preview',
+            contents: `Generate a concise, engaging title (3-6 words) for this chat session based on the interaction. Avoid generic phrases like 'Conversation with' or 'Chat about'. Return only the title text.
             
 User: ${userMessage.substring(0, 1000)}
-AI: ${aiResponse.substring(0, 1000)}
-
-Title:`,
+AI: ${aiResponse.substring(0, 1000)}`,
             config: {
-                maxOutputTokens: 15,
-                temperature: 0.5
+                maxOutputTokens: 20,
+                temperature: 0.7
             }
         });
         return response.text?.trim() || "New Conversation";
@@ -276,7 +274,7 @@ export const streamGeminiResponse = async (
       });
 
       // Use sendMessageStream with the 'message' parameter
-      const response = await chat.sendMessageStream({ message: parts });
+      const response = await chat.sendMessageStream({ message: parts } as any);
       return { stream: response };
   };
 

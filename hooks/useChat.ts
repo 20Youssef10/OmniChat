@@ -445,7 +445,7 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
 
                          // Generate Title based on AI response if first message (and standard chat)
                          if (!isTemporaryChat && messages.length === 0 && modelId === activeModels[0] && convId && convId !== 'temp' && !isSharedEdit) {
-                             generateConversationTitle(processedText, accText).then(title => {
+                             generateConversationTitle(payload.text, accText).then(title => {
                                  updateDoc(doc(db, "conversations", convId!), { title });
                              });
                          }

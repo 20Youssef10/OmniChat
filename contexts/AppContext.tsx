@@ -41,7 +41,7 @@ interface AppState {
   
   // Feature State (Global prefs that persist in session)
   selectedModelIds: string[];
-  setSelectedModelIds: (ids: string[]) => void;
+  setSelectedModelIds: React.Dispatch<React.SetStateAction<string[]>>;
   isComparisonMode: boolean;
   toggleComparisonMode: () => void;
   currentPersona: Persona | null;
