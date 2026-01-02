@@ -105,7 +105,8 @@ export const generateVideo = async (
       // Poll for completion
       while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5s
-        operation = await ai.operations.getVideosOperation({ operation: operation });
+        // Cast to any to avoid TS mismatch with SDK types vs Documentation
+        operation = await ai.operations.getVideosOperation({ operation: operation } as any);
       }
 
       if (operation.error) {
