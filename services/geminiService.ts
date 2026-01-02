@@ -105,8 +105,8 @@ export const generateVideo = async (
       // Poll for completion
       while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5s
-        // Force cast to any to avoid TS error: Argument of type '{}' is not assignable to parameter of type 'string'
-        operation = await (ai.operations as any).getVideosOperation({ operation: operation });
+        // Cast argument to any to bypass strict type check (SDK type definition mismatch)
+        operation = await ai.operations.getVideosOperation({ operation } as any);
       }
 
       if (operation.error) {
