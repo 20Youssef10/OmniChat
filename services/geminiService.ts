@@ -193,6 +193,7 @@ export const streamGeminiResponse = async (
 
   // Config setup
   const config: any = {};
+  // Explicitly type tools as any array to prevent TS string assignment error
   const tools: any[] = [];
 
   // Extract system prompt from history and sanitize history
