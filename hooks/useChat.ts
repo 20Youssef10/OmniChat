@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Conversation, Message, Attachment, Persona, Memory, UserProfile, UserApiKeys, Project, Workspace } from '../types';
 import { 
@@ -21,6 +20,7 @@ import {
     searchHackerNews, getWeather, searchWikipedia, getCryptoPrice,
     DEFAULT_YOUTUBE_API_KEY 
 } from '../services/connectorService';
+import { uploadImageBase64 } from '../services/fileService';
 import { LEVELS } from '../utils/gamification';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AVAILABLE_MODELS } from '../constants/models';
@@ -157,7 +157,7 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
                 const cmd = payload.text.split(' ')[0];
                 const content = payload.text.substring(cmd.length).trim();
                 
-                if (cmd === '/image') { activeModels = ['gemini-3-pro-image-preview']; processedText = content; }
+                if (cmd === '/image') { activeModels = ['gemini-2.5-flash-image']; processedText = content; }
                 else if (cmd === '/video') { activeModels = ['veo-3.1-fast-generate-preview']; processedText = content; }
                 else if (cmd === '/web' || cmd === '/search') { activeModels = ['gemini-3-flash-preview']; forceGrounding = true; processedText = content; }
                 else if (cmd === '/deep') { activeModels = ['gemini-3-pro-preview']; processedText = content; }
@@ -345,9 +345,12 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
                 userId: user?.uid || 'anonymous'
             };
 
-            if (isTemporaryChat) setTempMessages(prev => [...prev, userMsg]);
-            else {
+            if (isTemporaryChat) {
+                setTempMessages(prev => [...prev, userMsg]);
+            } else {
                 await sendMessageToDb(convId!, userMsg);
+                // Optimistically add user message to local state for instant feedback
+                setMessages(prev => [...prev, userMsg]);
                 
                 // Gamification (only for logged in users)
                 if (user) {
@@ -394,8 +397,13 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
                     conversationId: convId || undefined
                 };
 
-                if (isTemporaryChat) setTempMessages(prev => [...prev, initialAiMsg]);
-                else await sendMessageToDb(convId!, initialAiMsg);
+                if (isTemporaryChat) {
+                    setTempMessages(prev => [...prev, initialAiMsg]);
+                } else {
+                    await sendMessageToDb(convId!, initialAiMsg);
+                    // Optimistically add AI message placeholder
+                    setMessages(prev => [...prev, initialAiMsg]);
+                }
 
                 try {
                     if (modelId === 'dall-e-3') {
@@ -428,7 +436,28 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
                             if (chunk.text) {
                                 accText += chunk.text;
                                 if (isTemporaryChat) {
-                                     setTempMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: accText } : m));
+                                     setTempMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: accText, thinking: false } : m));
+                                } else {
+                                     // Streaming Update for Regular Chat
+                                     setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: accText, thinking: false } : m));
+                                }
+                            }
+                            // Handle Inline Images (e.g. from Nano Banana)
+                            if (chunk.image) {
+                                let imageUrlToSave = chunk.image;
+                                // If not temporary chat and it's a base64 string, upload to storage first to avoid Firestore limits
+                                if (!isTemporaryChat && chunk.image.startsWith('data:')) {
+                                    try {
+                                        imageUrlToSave = await uploadImageBase64(user?.uid || 'anonymous', chunk.image);
+                                    } catch (e) {
+                                        console.error("Failed to upload generated image to storage", e);
+                                        // Fallback: Don't save to DB to avoid size error
+                                        imageUrlToSave = ''; 
+                                    }
+                                }
+                                
+                                if (imageUrlToSave) {
+                                    await updateLastAiMessage(convId!, modelId, { imageUrl: imageUrlToSave }, isTemporaryChat, aiMessageId);
                                 }
                             }
                             if (chunk.usageMetadata) totalTokens = chunk.usageMetadata.totalTokenCount;
@@ -464,6 +493,9 @@ export const useChat = (user: UserProfile | null, selectedModelIds: string[], cu
         } else {
              // We now use updateMessageInDb with the known ID (msgId) to prevent creating new documents
              await updateMessageInDb(convId, msgId, { ...updates, role: 'model', model: modelId } as any);
+             
+             // Ensure local state is final sync
+             setMessages(prev => prev.map(m => m.id === msgId ? { ...m, ...updates, role: 'model', model: modelId } as Message : m));
         }
     };
 

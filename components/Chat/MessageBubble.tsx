@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -327,7 +326,7 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
                                 code({node, inline, className, children, ...props}: any) {
                                     const match = /language-(\w+)/.exec(className || '')
                                     const lang = match ? match[1] : '';
-                                    const isArtifact = !inline && (lang === 'html' || lang === 'svg' || lang === 'xml' || lang === 'javascript' || lang === 'typescript' || lang === 'tsx');
+                                    const isArtifact = !inline && (lang === 'html' || lang === 'svg' || lang === 'xml' || lang === 'javascript' || lang === 'typescript' || lang === 'tsx' || lang === 'python');
                                     
                                     if (lang === 'mermaid') {
                                         return <div className="mermaid bg-slate-800/50 p-4 rounded-lg my-4 overflow-x-auto">{String(children).replace(/\n$/, '')}</div>;
@@ -341,7 +340,7 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
                                                 <button 
                                                     onClick={() => onOpenArtifact({
                                                         id: `art-${Date.now()}`,
-                                                        type: lang === 'svg' ? 'svg' : 'html', // Simplification for demo
+                                                        type: lang === 'svg' ? 'svg' : (['html', 'xml'].includes(lang) ? 'html' : 'code'),
                                                         title: 'Code Preview',
                                                         content: String(children),
                                                         language: lang
@@ -349,7 +348,7 @@ export const MessageBubble = memo(({ message, onRegenerate, onEdit, onOpenArtifa
                                                     className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 rounded text-[10px] font-medium transition-colors border border-indigo-500/30"
                                                 >
                                                     <Maximize2 size={10} />
-                                                    Preview
+                                                    {['javascript', 'typescript', 'python'].includes(lang) ? 'Run Code' : 'Preview'}
                                                 </button>
                                             )}
                                         </div>

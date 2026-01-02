@@ -7,6 +7,7 @@ import { logger } from "../utils/logger";
 
 export type StreamChunk = {
   text?: string;
+  image?: string; // Base64 data URL for inline images
   groundingMetadata?: any;
   usageMetadata?: any;
   error?: string;
@@ -98,8 +99,18 @@ export const streamResponse = async function* (
     const result = await streamGeminiResponse(modelId, history, newMessage, attachments, generationConfig);
     for await (const chunk of result.stream) {
       const text = chunk.text;
+      let image = undefined;
       let groundingMetadata = undefined;
       let usageMetadata = undefined;
+
+      // Extract inline image data if present (for Gemini Flash Image models)
+      if (chunk.candidates?.[0]?.content?.parts) {
+          for (const part of chunk.candidates[0].content.parts) {
+              if (part.inlineData) {
+                  image = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+              }
+          }
+      }
 
       if (chunk.candidates?.[0]?.groundingMetadata) {
         groundingMetadata = chunk.candidates[0].groundingMetadata;
@@ -109,7 +120,7 @@ export const streamResponse = async function* (
           usageMetadata = chunk.usageMetadata;
       }
 
-      yield { text, groundingMetadata, usageMetadata };
+      yield { text, image, groundingMetadata, usageMetadata };
     }
     return;
   }

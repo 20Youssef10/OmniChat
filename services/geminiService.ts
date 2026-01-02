@@ -193,6 +193,7 @@ export const streamGeminiResponse = async (
 ) => {
   // Determine if we need paid key (for Pro Image)
   const isPaid = modelId === 'gemini-3-pro-image-preview';
+  const isImageModel = modelId.includes('image');
   
   // 1. Prepare Payload (Data preparation does not need AI client)
   
@@ -284,8 +285,8 @@ export const streamGeminiResponse = async (
   // 1. Thinking Mode (Gemini 3 Pro)
   if (modelId === 'gemini-3-pro-preview') {
     config.thinkingConfig = { thinkingBudget: 32768 };
-  } else {
-    // Only set maxOutputTokens if NOT thinking model (or thinking budget not set) to avoid conflict
+  } else if (!isImageModel) {
+    // Only set maxOutputTokens if NOT thinking model AND NOT image model
     config.maxOutputTokens = generationConfig?.maxTokens || 8192;
   }
 
@@ -305,6 +306,12 @@ export const streamGeminiResponse = async (
       imageSize: "1K", 
       aspectRatio: "1:1"
     };
+  }
+  // Free image model config
+  if (modelId === 'gemini-2.5-flash-image') {
+      config.imageConfig = {
+          aspectRatio: "1:1"
+      };
   }
 
   // 5. TTS Config

@@ -1,5 +1,5 @@
 
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
 import { storage } from "./firebase";
 import * as XLSX from "xlsx";
 import { Attachment } from "../types";
@@ -65,6 +65,27 @@ export const uploadFile = async (file: File, userId: string): Promise<Attachment
         // Fallback: Use local data URL if upload fails (offline, permissions, or retry limit)
         return createLocalAttachment();
     }
+};
+
+export const uploadImageBase64 = async (userId: string, base64Data: string): Promise<string> => {
+    // If local guest, just return the base64. 
+    // Note: This might still trigger firestore limit if local guests were syncing to cloud, 
+    // but the app logic handles local guests mostly in-memory/local-storage for chats.
+    if (userId.startsWith('guest_local_')) {
+        return base64Data;
+    }
+
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 10);
+    // Determine extension from mime type in data url
+    const match = base64Data.match(/^data:image\/(\w+);base64,/);
+    const ext = match ? match[1] : 'png';
+    
+    const storagePath = `users/${userId}/generated/${timestamp}_${randomId}.${ext}`;
+    const storageRef = ref(storage, storagePath);
+
+    await uploadString(storageRef, base64Data, 'data_url');
+    return await getDownloadURL(storageRef);
 };
 
 const extractSpreadsheetText = async (file: File): Promise<string> => {

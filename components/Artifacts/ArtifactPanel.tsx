@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Code, Play, Check, Download, ExternalLink, RotateCcw, Loader2, Terminal } from 'lucide-react';
+import { X, Code, Play, Check, Download, ExternalLink, RotateCcw, Loader2, Terminal, Trash2 } from 'lucide-react';
 import { Artifact } from '../../types';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -31,6 +31,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
   const [isRunning, setIsRunning] = useState(false);
   const [pyodide, setPyodide] = useState<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const outputEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Determine default tab based on type
@@ -46,9 +47,11 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
     const initPyodide = async () => {
       if (artifact?.language === 'python' && !pyodide) {
         try {
+          setOutput(prev => [...prev, "Initializing Python environment..."]);
           await loadScript("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
           const py = await window.loadPyodide();
           setPyodide(py);
+          setOutput(prev => [...prev, "Python ready."]);
         } catch (e) {
           console.error("Failed to load Pyodide:", e);
           setOutput(prev => [...prev, "Error: Could not load Python environment."]);
@@ -69,64 +72,93 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
     }
   }, [artifact, activeTab]);
 
+  useEffect(() => {
+      if (activeTab === 'run') {
+          outputEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+  }, [output, activeTab]);
+
+  const runJavaScript = async (code: string) => {
+      return new Promise<void>((resolve) => {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.setAttribute('sandbox', 'allow-scripts'); // Sandbox: execution only, no DOM/Cookie access to parent
+          document.body.appendChild(iframe);
+
+          const handleMessage = (event: MessageEvent) => {
+              // Although sandboxed frames usually have null origin, we filter by a custom flag in data
+              if (event.data?.source === 'sandbox-logger') {
+                  const { type, args } = event.data;
+                  if (type === 'log') {
+                      setOutput(prev => [...prev, args.join(' ')]);
+                  } else if (type === 'error') {
+                      setOutput(prev => [...prev, `ERROR: ${args.join(' ')}`]);
+                  } else if (type === 'done') {
+                      window.removeEventListener('message', handleMessage);
+                      document.body.removeChild(iframe);
+                      resolve();
+                  }
+              }
+          };
+
+          window.addEventListener('message', handleMessage);
+
+          // Wrap code to catch errors and redirect console
+          const html = `
+            <html><body><script>
+                const send = (type, args) => window.parent.postMessage({ source: 'sandbox-logger', type, args: args.map(String) }, '*');
+                
+                console.log = (...args) => send('log', args);
+                console.info = (...args) => send('log', args);
+                console.warn = (...args) => send('log', ['WARN:', ...args]);
+                console.error = (...args) => send('error', args);
+                
+                window.onerror = (msg, url, line) => send('error', [msg + ' (Line ' + line + ')']);
+
+                (async function() {
+                    try {
+                        ${code}
+                    } catch (e) {
+                        console.error(e.toString());
+                    } finally {
+                        send('done', []);
+                    }
+                })();
+            </script></body></html>
+          `;
+          
+          iframe.contentWindow?.document.open();
+          iframe.contentWindow?.document.write(html);
+          iframe.contentWindow?.document.close();
+      });
+  };
+
   const runCode = async () => {
-    setOutput([]);
+    setOutput([]); // Clear previous output
     setActiveTab('run');
     setIsRunning(true);
     
-    if (artifact?.language === 'javascript' || artifact?.language === 'typescript') {
-        try {
-            const logs: string[] = [];
-            const mockConsole = {
-                log: (...args: any[]) => {
-                    const line = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-                    logs.push(line);
-                    setOutput([...logs]);
-                },
-                error: (...args: any[]) => {
-                    const line = 'ERROR: ' + args.map(a => String(a)).join(' ');
-                    logs.push(line);
-                    setOutput([...logs]);
-                },
-                warn: (...args: any[]) => {
-                    const line = 'WARN: ' + args.map(a => String(a)).join(' ');
-                    logs.push(line);
-                    setOutput([...logs]);
-                }
-            };
-
-            // Wrap in an async IIFE to support await
-            const wrappedCode = `
-                return (async () => {
-                    ${artifact.content}
-                })();
-            `;
-
-            const func = new Function('console', wrappedCode);
-            await func(mockConsole);
-        } catch (e: any) {
-            setOutput(prev => [...prev, `Runtime Error: ${e.message}`]);
-        } finally {
-            setIsRunning(false);
-        }
-    } else if (artifact?.language === 'python') {
-        if (!pyodide) {
-            setOutput(["Python environment loading... please wait."]);
-            setIsRunning(false);
-            return;
-        }
-        try {
-            // Redirect stdout
+    try {
+        if (artifact?.language === 'javascript' || artifact?.language === 'typescript') {
+            await runJavaScript(artifact.content);
+        } else if (artifact?.language === 'python') {
+            if (!pyodide) {
+                setOutput(["Python environment loading... please wait."]);
+                // Retry checking pyodide in loop or just return
+                setIsRunning(false);
+                return;
+            }
+            // Reset stdout/stderr capture
             pyodide.setStdout({ batched: (msg: string) => setOutput(prev => [...prev, msg]) });
             pyodide.setStderr({ batched: (msg: string) => setOutput(prev => [...prev, `Error: ${msg}`]) });
+            
             await pyodide.runPythonAsync(artifact.content);
-        } catch (e: any) {
-            setOutput(prev => [...prev, `Traceback: ${e.message}`]);
-        } finally {
-            setIsRunning(false);
+        } else {
+            setOutput(["Execution only supported for JavaScript and Python in this sandbox."]);
         }
-    } else {
-        setOutput(["Execution only supported for JavaScript and Python in this sandbox."]);
+    } catch (e: any) {
+        setOutput(prev => [...prev, `Runtime Error: ${e.message}`]);
+    } finally {
         setIsRunning(false);
     }
   };
@@ -193,10 +225,19 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
                     <span className="font-semibold text-white flex items-center gap-2">
                         <Terminal size={16} /> Console Output
                     </span>
-                    <button onClick={runCode} disabled={isRunning} className="flex items-center gap-1 text-green-400 hover:text-green-300 disabled:opacity-50">
-                        {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} 
-                        {isRunning ? 'Running...' : 'Run Again'}
-                    </button>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => setOutput([])} 
+                            className="text-slate-500 hover:text-white transition-colors"
+                            title="Clear Output"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                        <button onClick={runCode} disabled={isRunning} className="flex items-center gap-1 text-green-400 hover:text-green-300 disabled:opacity-50">
+                            {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} 
+                            {isRunning ? 'Running...' : 'Run Again'}
+                        </button>
+                    </div>
                 </div>
                 {output.length === 0 ? (
                     <div className="text-slate-500 italic">No output. Click Run to execute code.</div>
@@ -207,6 +248,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
                                 {line}
                             </div>
                         ))}
+                        <div ref={outputEndRef} />
                     </div>
                 )}
             </div>

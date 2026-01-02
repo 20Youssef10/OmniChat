@@ -152,7 +152,7 @@ export const OmniBook: React.FC<OmniBookProps> = ({ userId, onClose, onOpenArtif
     // Source Management
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!activeProject || !e.target.files) return;
-        const files = Array.from(e.target.files);
+        const files = Array.from(e.target.files) as File[];
         try {
             const uploaded: Attachment[] = [];
             for (const file of files) {
