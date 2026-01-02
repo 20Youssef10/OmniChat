@@ -16,10 +16,13 @@ interface AppState {
   // UI State
   isSidebarOpen: boolean;
   setSidebarOpen: (v: boolean) => void;
-  isScratchpadOpen: boolean; // New
-  setScratchpadOpen: (v: boolean) => void; // New
-  isFocusMode: boolean; // New
-  setFocusMode: (v: boolean) => void; // New
+  isScratchpadOpen: boolean; 
+  setScratchpadOpen: (v: boolean) => void; 
+  isFocusMode: boolean; 
+  setFocusMode: (v: boolean) => void;
+  isOmniBookOpen: boolean; // New: OmniBook View
+  setOmniBookOpen: (v: boolean) => void;
+  
   modals: {
       auth: boolean;
       settings: boolean;
@@ -70,8 +73,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // UI
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [isScratchpadOpen, setScratchpadOpen] = useState(false); // New
-  const [isFocusMode, setFocusMode] = useState(false); // New
+  const [isScratchpadOpen, setScratchpadOpen] = useState(false); 
+  const [isFocusMode, setFocusMode] = useState(false); 
+  const [isOmniBookOpen, setOmniBookOpen] = useState(false); // New
   const [modals, setModals] = useState({
       auth: false,
       settings: false,
@@ -187,6 +191,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isSidebarOpen, setSidebarOpen,
       isScratchpadOpen, setScratchpadOpen,
       isFocusMode, setFocusMode,
+      isOmniBookOpen, setOmniBookOpen,
       modals, openModal, closeModal,
       selectedModelIds, setSelectedModelIds,
       isComparisonMode, toggleComparisonMode,

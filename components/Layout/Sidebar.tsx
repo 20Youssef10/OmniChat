@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { 
     Plus, MessageSquare, Trash2, LogOut, Settings, PanelLeftClose, PanelLeftOpen, LogIn, Search, Archive, Command,
-    User, BrainCircuit, Activity, Zap, Users, Folder, BookTemplate, Shield, Clock, Ghost, Info
+    User, BrainCircuit, Activity, Zap, Users, Folder, BookTemplate, Shield, Clock, Ghost, Info, NotebookPen
 } from 'lucide-react';
 import { Conversation, UserProfile } from '../../types';
 import { useAppStore } from '../../contexts/AppContext';
@@ -41,7 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const recentConversations = conversations.slice(0, 20);
   
   // Access global state for temp chat toggle
-  const { isTemporaryChat, setTemporaryChat } = useAppStore();
+  const { isTemporaryChat, setTemporaryChat, setOmniBookOpen, isOmniBookOpen } = useAppStore();
 
   const renderNavItem = (icon: React.ReactNode, label: string, onClick: () => void, highlight: boolean = false) => (
       <button 
@@ -96,6 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button 
                     onClick={() => {
                         onNewChat();
+                        setOmniBookOpen(false); // Close OmniBook when starting new chat
                         setTemporaryChat(false);
                         if (window.innerWidth < 768) setIsOpen(false);
                     }}
@@ -140,6 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Navigation Items (Guests can click everything) */}
             <div className="px-2 py-2 space-y-0.5 border-b border-slate-800/50 mb-2">
+                {renderNavItem(<NotebookPen size={18} className="text-pink-400" />, "OmniBook (NotebookLM)", () => setOmniBookOpen(!isOmniBookOpen), isOmniBookOpen)}
                 {renderNavItem(<Folder size={18} />, "Projects", () => onOpenModal('projects'))}
                 {renderNavItem(<BookTemplate size={18} />, "Prompt Library", () => onOpenModal('prompts'))}
                 {renderNavItem(<User size={18} />, "Personas", () => onOpenModal('personas'))}
@@ -167,6 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             key={conv.id}
                             onClick={() => {
                                 onSelectConversation(conv.id);
+                                setOmniBookOpen(false); // Close OmniBook when selecting chat
                                 if (window.innerWidth < 768) setIsOpen(false);
                             }}
                             className={`

@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { Attachment } from "../types";
+import { Attachment, GenerationConfig } from "../types";
 
 // Helper to get the correct client
 const getClient = async (isPaidModel: boolean = false) => {
@@ -40,6 +40,56 @@ AI: ${aiResponse.substring(0, 1000)}`,
     } catch (e) {
         console.warn("Title generation failed", e);
         return "New Conversation";
+    }
+};
+
+export const generatePodcastScript = async (context: string): Promise<string> => {
+    try {
+        const ai = await getClient();
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Generate an engaging podcast script between two hosts (Host A and Host B) summarizing the following source material.
+            
+            Guidelines:
+            - Make it conversational, like "Deep Dive" or a popular tech podcast.
+            - Host A is enthusiastic and introduces topics.
+            - Host B is analytical and skeptical, asking the "why" questions.
+            - Use short sentences and natural interruptions.
+            - Focus on the key insights and "Aha!" moments.
+            - Format strictly as: "Host A: [text]\nHost B: [text]"
+            
+            Source Material:
+            ${context.substring(0, 50000)}`, // Limit context
+            config: {
+                temperature: 0.8
+            }
+        });
+        return response.text || "";
+    } catch (e) {
+        console.error("Podcast gen failed", e);
+        throw e;
+    }
+};
+
+export const generateStudyArtifact = async (type: 'guide' | 'timeline' | 'matrix' | 'quiz' | 'slides', context: string): Promise<string> => {
+    let prompt = "";
+    if (type === 'guide') prompt = "Create a comprehensive Study Guide from the provided sources. Include Key Concepts, Vocabulary, and Chapter Summaries. Use Markdown.";
+    if (type === 'timeline') prompt = "Extract a chronological Timeline of events from the sources. Format as a Markdown table with columns: Date, Event, Significance.";
+    if (type === 'matrix') prompt = "Create a Comparative Matrix table comparing the key entities/topics in the sources across different criteria (e.g., Pros, Cons, Features). Use Markdown.";
+    if (type === 'quiz') prompt = "Create a 10-question multiple choice Quiz based on the sources. Include the correct answer key at the bottom.";
+    if (type === 'slides') prompt = "Outline a 10-slide Presentation Deck based on the sources. For each slide, provide the Title, Bullet Points, and Speaker Notes.";
+
+    try {
+        const ai = await getClient();
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `${prompt}\n\nSources:\n${context.substring(0, 30000)}`,
+            config: { temperature: 0.3 }
+        });
+        return response.text || "";
+    } catch (e) {
+        console.error("Artifact gen failed", e);
+        throw e;
     }
 };
 
@@ -138,7 +188,8 @@ export const streamGeminiResponse = async (
   modelId: string,
   history: { role: string; content: string }[],
   newMessage: string,
-  attachments: Attachment[] = []
+  attachments: Attachment[],
+  generationConfig?: GenerationConfig
 ) => {
   // Determine if we need paid key (for Pro Image)
   const isPaid = modelId === 'gemini-3-pro-image-preview';
@@ -194,6 +245,14 @@ export const streamGeminiResponse = async (
 
   // Config setup
   const config: any = {};
+  
+  // Apply User Configs
+  if (generationConfig) {
+      if (generationConfig.temperature !== undefined) config.temperature = generationConfig.temperature;
+      if (generationConfig.topP !== undefined) config.topP = generationConfig.topP;
+      // maxTokens is conditionally set below
+  }
+
   // Explicitly type tools as any array to prevent TS string assignment error
   const tools: any[] = [];
 
@@ -227,8 +286,7 @@ export const streamGeminiResponse = async (
     config.thinkingConfig = { thinkingBudget: 32768 };
   } else {
     // Only set maxOutputTokens if NOT thinking model (or thinking budget not set) to avoid conflict
-    // But since we set thinkingBudget above, we skip maxOutputTokens there.
-    config.maxOutputTokens = 8192;
+    config.maxOutputTokens = generationConfig?.maxTokens || 8192;
   }
 
   // 2. Search Grounding (Gemini 3 Flash)

@@ -125,7 +125,7 @@ export interface UserProfile {
 }
 
 export interface Attachment {
-  type: 'image' | 'file';
+  type: 'image' | 'file' | 'audio' | 'youtube';
   url: string; // Base64 or Storage URL
   name?: string;
   mimeType?: string;
@@ -191,6 +191,7 @@ export interface Conversation {
   };
 }
 
+// Updated Project to support OmniBook features
 export interface Project {
   id: string;
   userId: string;
@@ -198,9 +199,20 @@ export interface Project {
   description?: string;
   customInstructions?: string;
   files?: Attachment[]; // Reference files for context
+  notes?: Note[]; // OmniBook Insight Cards
   createdAt: number;
   updatedAt: number;
   color?: string;
+}
+
+export interface Note {
+    id: string;
+    content: string;
+    sourceId?: string; // Link back to attachment
+    tags?: string[];
+    color?: string;
+    x?: number; // Visual position
+    y?: number;
 }
 
 export interface PromptTemplate {

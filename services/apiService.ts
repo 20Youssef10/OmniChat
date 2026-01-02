@@ -95,7 +95,7 @@ export const streamResponse = async function* (
 
   // 1. Google Gemini
   if (provider === 'Google') {
-    const result = await streamGeminiResponse(modelId, history, newMessage, attachments);
+    const result = await streamGeminiResponse(modelId, history, newMessage, attachments, generationConfig);
     for await (const chunk of result.stream) {
       const text = chunk.text;
       let groundingMetadata = undefined;

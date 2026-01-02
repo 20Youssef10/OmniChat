@@ -45,6 +45,7 @@ const SettingsModal = React.lazy(() => import('./components/Settings/SettingsMod
 const AdminDashboard = React.lazy(() => import('./components/Admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const InfoModal = React.lazy(() => import('./components/Pages/InfoModal').then(m => ({ default: m.InfoModal })));
 const ShareModal = React.lazy(() => import('./components/Chat/ShareModal').then(m => ({ default: m.ShareModal })));
+const OmniBook = React.lazy(() => import('./components/OmniBook/OmniBook').then(m => ({ default: m.OmniBook })));
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const MainLayout: React.FC = () => {
         isSidebarOpen, setSidebarOpen,
         isScratchpadOpen, setScratchpadOpen,
         isFocusMode, setFocusMode,
+        isOmniBookOpen, setOmniBookOpen,
         modals, openModal, closeModal,
         selectedModelIds, setSelectedModelIds,
         isComparisonMode, toggleComparisonMode,
@@ -234,6 +236,7 @@ const MainLayout: React.FC = () => {
         }
         setSharedConversation(null);
         setTemporaryChat(false); // Reset temp mode when clicking new chat
+        setOmniBookOpen(false); // Ensure OmniBook is closed
         clearUrlParams(); // Clear share URL if present
         trackEvent('feature_used', { feature: 'new_chat', project_id: projectId });
         const id = await createConversation(user!.uid, selectedModelIds[0], "New Chat", projectId);
@@ -294,6 +297,39 @@ const MainLayout: React.FC = () => {
 
     if (authLoading) return <div className="flex items-center justify-center h-screen bg-background text-indigo-400"><Loader2 className="animate-spin" /></div>;
 
+    // --- OMNIBOOK VIEW ---
+    if (isOmniBookOpen) {
+        return (
+            <div className="flex h-screen bg-background overflow-hidden relative">
+                {!isFocusMode && (
+                    <Sidebar 
+                        conversations={conversations}
+                        currentConversationId={currentConversationId}
+                        onSelectConversation={setCurrentConversationId}
+                        onNewChat={handleNewChat}
+                        onDeleteConversation={handleDeleteConversation}
+                        user={user}
+                        onSignOut={handleSignOut}
+                        onSignIn={() => openModal('auth')}
+                        isOpen={isSidebarOpen}
+                        setIsOpen={setSidebarOpen}
+                        onOpenSearch={() => openModal('search')}
+                        onOpenModal={openModal}
+                    />
+                )}
+                <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-background"><Loader2 className="animate-spin text-white"/></div>}>
+                    <OmniBook 
+                        userId={user?.uid || 'guest'} 
+                        onClose={() => setOmniBookOpen(false)} 
+                        onOpenArtifact={setCurrentArtifact} 
+                    />
+                    {currentArtifact && <ArtifactPanel artifact={currentArtifact} onClose={() => setCurrentArtifact(null)} />}
+                </Suspense>
+            </div>
+        );
+    }
+
+    // --- STANDARD CHAT VIEW ---
     return (
         <div className="flex h-screen bg-background overflow-hidden relative">
             <OfflineIndicator lang={user?.preferences?.language || 'en'} />

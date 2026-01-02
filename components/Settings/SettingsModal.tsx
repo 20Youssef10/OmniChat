@@ -279,6 +279,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, u
                                 </div>
                             </div>
 
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Top P: {genConfig.topP}</label>
+                                <input 
+                                    type="range" 
+                                    min="0" max="1" step="0.05"
+                                    value={genConfig.topP}
+                                    onChange={(e) => setGenConfig({...genConfig, topP: parseFloat(e.target.value)})}
+                                    className="w-full accent-indigo-500"
+                                />
+                                <div className="flex justify-between text-xs text-slate-500">
+                                    <span>Focused (0)</span>
+                                    <span>Diverse (1)</span>
+                                </div>
+                            </div>
+
                              <div>
                                 <label className="block text-sm font-medium text-slate-300 mb-2">Max Output Tokens</label>
                                 <input 
